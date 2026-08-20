@@ -1,0 +1,10 @@
+# Control Plane governance paths require human ownership.
+# Enforcement becomes effective only when GitHub branch protection requires CODEOWNERS review.
+
+/control-plane/approvals/ @tane1982
+/control-plane/tasks/ @tane1982
+/control-plane/CONTROL_PLANE_SPEC.md @tane1982
+/control-plane/audits/ @tane1982
+/control-plane/evidence/ @tane1982
+
+# Implementation remains executor-owned; governance files above are protected separately.
