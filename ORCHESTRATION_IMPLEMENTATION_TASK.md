@@ -38,7 +38,7 @@ No VPS, production, JETRO/IBE, databases, or deployments may be accessed.
 ## Required Claude response
 ORCHESTRATION_CONTRACT_REVIEW = PASS
 
-Branch: chatgpt/full-orchestration-test
+Branch: chatgpt/orchestration-test
 Handoff: CURSOR_HANDOFF.md
 Status: READY_FOR_CURSOR
 
