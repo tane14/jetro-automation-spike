@@ -148,18 +148,44 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           export PR_JSON="$tmp/pr.json"
-          export REVIEWS_JSON="$tmp/reviews.json"
+          export REVIEWS_DIR="$tmp/pages"
+          mkdir -p "$REVIEWS_DIR"
 
           api() {
             curl --fail-with-body --silent --show-error \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$1"
+              "$@"
           }
 
           api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" > "$PR_JSON"
-          api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100" > "$REVIEWS_JSON"
+
+          page=1
+          max_pages=50
+          while true; do
+            if [ "$page" -gt "$max_pages" ]; then
+              echo "Reviews pagination exceeded defensive max_pages=${max_pages}; fail-closed."
+              exit 1
+            fi
+            body="$REVIEWS_DIR/${page}.json"
+            hdr="$tmp/headers.${page}"
+            url="https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100&page=${page}"
+            if ! api -D "$hdr" "$url" > "$body"; then
+              echo "Failed to fetch GitHub reviews page ${page}; fail-closed."
+              exit 1
+            fi
+            page_len="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit("GitHub reviews page is not a list.") if not isinstance(data, list) else print(len(data))' "$body")"
+            has_next=0
+            if grep -Eiq 'rel="next"' "$hdr"; then
+              has_next=1
+            fi
+            if [ "$page_len" -eq 100 ] || [ "$has_next" -eq 1 ]; then
+              page=$((page + 1))
+              continue
+            fi
+            break
+          done
 
           PR_HEAD_SHA="$(python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
           import json, os
@@ -171,26 +197,75 @@ jobs:
           print(head)
           """))')"
 
-          echo "event=${EVENT_NAME} pr=${PR_NUMBER} head=${PR_HEAD_SHA}"
+          echo "event=${EVENT_NAME} pr=${PR_NUMBER} head=${PR_HEAD_SHA} review_pages=${page}"
           if [ -n "${PAYLOAD_HEAD_SHA}" ] && [ "${PAYLOAD_HEAD_SHA}" != "${PR_HEAD_SHA}" ]; then
             echo "Webhook payload head ${PAYLOAD_HEAD_SHA} differs from current API head ${PR_HEAD_SHA}; using API head."
           fi
 
           approved_by="$(PR_HEAD_SHA="${PR_HEAD_SHA}" python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
-          import json, os
-          with open(os.environ["REVIEWS_JSON"], encoding="utf-8") as fh:
-              reviews = json.load(fh)
-          if not isinstance(reviews, list):
-              raise SystemExit("GitHub reviews payload is not a list.")
+          import glob, json, os
+          from datetime import datetime
+          paths = sorted(
+              glob.glob(os.path.join(os.environ["REVIEWS_DIR"], "*.json")),
+              key=lambda p: int(os.path.splitext(os.path.basename(p))[0]),
+          )
+          if not paths:
+              raise SystemExit("No GitHub review pages were collected; fail-closed.")
+          reviews = []
+          for path in paths:
+              with open(path, encoding="utf-8") as fh:
+                  page = json.load(fh)
+              if not isinstance(page, list):
+                  raise SystemExit("GitHub reviews payload is not a list.")
+              reviews.extend(page)
           allowed = {x.strip() for x in os.environ["ALLOWED_REVIEWERS"].split(",") if x.strip()}
           head = os.environ["PR_HEAD_SHA"]
-          for review in reversed(reviews):
+          substitutive = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
+
+          def submitted_at(review):
+              raw = review.get("submitted_at")
+              if not isinstance(raw, str) or not raw.strip():
+                  raise SystemExit("Review missing usable submitted_at; fail-closed.")
+              token = raw.strip()
+              if token.endswith("Z"):
+                  token = token[:-1] + "+00:00"
+              try:
+                  return datetime.fromisoformat(token)
+              except ValueError:
+                  raise SystemExit("Review submitted_at is not parseable; fail-closed.")
+
+          def review_id(review):
+              rid = review.get("id")
+              try:
+                  return int(rid)
+              except (TypeError, ValueError):
+                  raise SystemExit("Review missing usable id; fail-closed.")
+
+          latest = {}
+          for review in reviews:
+              if not isinstance(review, dict):
+                  raise SystemExit("Review entry is not an object; fail-closed.")
               user = (review.get("user") or {}).get("login")
+              if user not in allowed:
+                  continue
               state = review.get("state")
+              if state not in substitutive:
+                  continue
+              key = (submitted_at(review), review_id(review))
+              prev = latest.get(user)
+              if prev is None or key > (prev[0], prev[1]):
+                  latest[user] = (key[0], key[1], review)
+
+          approved_by = ""
+          for user, (_ts, _rid, review) in latest.items():
               commit_id = review.get("commit_id")
-              if user in allowed and state == "APPROVED" and commit_id == head:
-                  print(user)
+              if not isinstance(commit_id, str) or not commit_id.strip():
+                  raise SystemExit("Latest substitutive review missing commit_id; fail-closed.")
+              if review.get("state") == "APPROVED" and commit_id == head:
+                  approved_by = user
                   break
+          if approved_by:
+              print(approved_by)
           """))')"
 
           if [ -z "$approved_by" ]; then
