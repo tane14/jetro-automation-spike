@@ -1,0 +1,158 @@
+name: Control Plane Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-integrity:
+    name: contract-integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate contract integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          echo "$changed_files"
+
+          task_files="$(printf '%s\n' "$changed_files" | grep '^control-plane/tasks/TASK-[0-9]\{8\}-[0-9]\{3\}\.md$' || true)"
+          approval_files="$(printf '%s\n' "$changed_files" | grep '^control-plane/approvals/TASK-[0-9]\{8\}-[0-9]\{3\}.*\.md$' || true)"
+
+          if [ -n "$approval_files" ] && [ -z "$task_files" ]; then
+            echo "Approval changes require a corresponding task contract change in this initial enforcement version."
+            exit 1
+          fi
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            grep -Eq 'TASK-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing TASK ID in $file"; exit 1; }
+            grep -Eq 'CONTRACT-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing CONTRACT ID in $file"; exit 1; }
+          done <<< "$task_files"
+
+          echo "contract-integrity PASS"
+
+  approval-integrity:
+    name: approval-integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate approval artifact shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          approval_files="$(printf '%s\n' "$changed_files" | grep '^control-plane/approvals/.*\.md$' || true)"
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            grep -Eq 'TASK-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing TASK ID in $file"; exit 1; }
+            grep -Eq 'CONTRACT-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing CONTRACT ID in $file"; exit 1; }
+            grep -Eiq '(commit|sha)[^a-f0-9]*[a-f0-9]{7,40}' "$file" || { echo "Missing approved commit SHA in $file"; exit 1; }
+            grep -Eiq '(sha-?256|hash)' "$file" || { echo "Missing contract hash marker in $file"; exit 1; }
+          done <<< "$approval_files"
+
+          echo "approval-integrity PASS"
+
+  task-boundary:
+    name: task-boundary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate changed paths stay inside allowed boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          echo "$changed_files"
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              .github/*|control-plane/*|src/*|README.md|.gitignore)
+                ;;
+              *)
+                echo "Path outside approved laboratory boundaries: $file"
+                exit 1
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "task-boundary PASS"
+
+  validation-evidence:
+    name: validation-evidence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run repository tests and validate evidence presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tests < <(find src -type f -name '*.test.js' -print 2>/dev/null | sort)
+          if [ "${#tests[@]}" -gt 0 ]; then
+            node --test "${tests[@]}"
+          fi
+
+          changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          code_changed="$(printf '%s\n' "$changed_files" | grep '^src/' || true)"
+          evidence_changed="$(printf '%s\n' "$changed_files" | grep '^control-plane/evidence/' || true)"
+
+          if [ -n "$code_changed" ] && [ -z "$evidence_changed" ]; then
+            echo "Code changes require a control-plane evidence artifact."
+            exit 1
+          fi
+
+          echo "validation-evidence PASS"
+
+  lifecycle-state:
+    name: lifecycle-state
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate lifecycle artifact consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          task_ids="$(printf '%s\n' "$changed_files" | grep -oE 'TASK-[0-9]{8}-[0-9]{3}' | sort -u || true)"
+
+          count="$(printf '%s\n' "$task_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$count" -gt 1 ]; then
+            echo "A single PR may not mutate multiple task lifecycles."
+            printf '%s\n' "$task_ids"
+            exit 1
+          fi
+
+          while IFS= read -r task_id; do
+            [ -z "$task_id" ] && continue
+            if printf '%s\n' "$changed_files" | grep -q "control-plane/evidence/${task_id}/completion.md"; then
+              test -f "control-plane/approvals/${task_id}-completion.md" || {
+                echo "Completion evidence requires completion approval for $task_id"
+                exit 1
+              }
+            fi
+          done <<< "$task_ids"
+
+          echo "lifecycle-state PASS"
