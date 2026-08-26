@@ -49,19 +49,65 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Validate approval artifact shape
+      - name: Validate approval artifact binding
         shell: bash
         run: |
           set -euo pipefail
           changed_files="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
-          approval_files="$(printf '%s\n' "$changed_files" | grep '^control-plane/approvals/.*\.md$' || true)"
+          approval_files="$(printf '%s\n' "$changed_files" | grep '^control-plane/approvals/TASK-[0-9]\{8\}-[0-9]\{3\}\.md$' || true)"
 
           while IFS= read -r file; do
             [ -z "$file" ] && continue
-            grep -Eq 'TASK-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing TASK ID in $file"; exit 1; }
-            grep -Eq 'CONTRACT-[0-9]{8}-[0-9]{3}' "$file" || { echo "Missing CONTRACT ID in $file"; exit 1; }
-            grep -Eiq '(commit|sha)[^a-f0-9]*[a-f0-9]{7,40}' "$file" || { echo "Missing approved commit SHA in $file"; exit 1; }
-            grep -Eiq '(sha-?256|hash)' "$file" || { echo "Missing contract hash marker in $file"; exit 1; }
+
+            task_id="$(grep -oE 'TASK-[0-9]{8}-[0-9]{3}' "$file" | head -n1 || true)"
+            contract_id="$(grep -oE 'CONTRACT-[0-9]{8}-[0-9]{3}' "$file" | head -n1 || true)"
+            approved_commit="$(grep -Eio '(commit|sha)[^a-f0-9]*[a-f0-9]{40}' "$file" | grep -Eo '[a-f0-9]{40}' | head -n1 || true)"
+            approved_hash="$(grep -Eio '(sha-?256|hash)[^a-f0-9]*[a-f0-9]{64}' "$file" | grep -Eo '[a-f0-9]{64}' | head -n1 || true)"
+
+            [ -n "$task_id" ] || { echo "Missing TASK ID in $file"; exit 1; }
+            [ -n "$contract_id" ] || { echo "Missing CONTRACT ID in $file"; exit 1; }
+            [ -n "$approved_commit" ] || { echo "Missing 40-char approved commit SHA in $file"; exit 1; }
+            [ -n "$approved_hash" ] || { echo "Missing 64-char approved contract SHA-256 in $file"; exit 1; }
+
+            task_file="control-plane/tasks/${task_id}.md"
+            test -f "$task_file" || { echo "Active task contract not found: $task_file"; exit 1; }
+
+            git cat-file -e "${approved_commit}^{commit}" 2>/dev/null || {
+              echo "Approved commit does not exist: $approved_commit"
+              exit 1
+            }
+
+            git merge-base --is-ancestor "$approved_commit" HEAD || {
+              echo "Approved commit is not an ancestor of current PR head: $approved_commit"
+              exit 1
+            }
+
+            approved_contract="$(git show "${approved_commit}:${task_file}" 2>/dev/null || true)"
+            [ -n "$approved_contract" ] || {
+              echo "Task contract $task_file was not present at approved commit $approved_commit"
+              exit 1
+            }
+
+            printf '%s' "$approved_contract" | grep -q "$contract_id" || {
+              echo "Contract ID $contract_id not found in approved contract snapshot"
+              exit 1
+            }
+
+            computed_hash="$(printf '%s' "$approved_contract" | sha256sum | awk '{print $1}')"
+            [ "$computed_hash" = "$approved_hash" ] || {
+              echo "Declared approval hash does not match approved contract snapshot"
+              echo "declared=$approved_hash"
+              echo "computed=$computed_hash"
+              exit 1
+            }
+
+            current_hash="$(sha256sum "$task_file" | awk '{print $1}')"
+            [ "$current_hash" = "$approved_hash" ] || {
+              echo "TOCTOU detected: active contract differs from approved contract"
+              echo "approved=$approved_hash"
+              echo "current=$current_hash"
+              exit 1
+            }
           done <<< "$approval_files"
 
           echo "approval-integrity PASS"
