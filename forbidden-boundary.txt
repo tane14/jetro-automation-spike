@@ -1,0 +1,2 @@
+Intentional adversarial fixture for Control Plane enforcement validation.
+This path is outside the approved laboratory boundaries and should make task-boundary fail.
