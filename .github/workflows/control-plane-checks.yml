@@ -124,12 +124,20 @@ jobs:
 
           echo "approval-integrity PASS"
 
+  # Evidence Attestation v0.5: emit structured JSON as evidence only.
+  # PASS/FAIL is decided exclusively from live GitHub API data. The stored
+  # attestation is never read back as authority. This job does not checkout.
   approval-provenance:
     name: approval-provenance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && github.event.pull_request.base.ref == 'main' }}
     steps:
-      - name: Validate human approval provenance from GitHub review identity
+      - name: Evaluate approval provenance and write attestation
+        id: evaluate
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -137,20 +145,423 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PAYLOAD_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ALLOWED_REVIEWERS: machubsystem-sketch
+          ATTESTATION_PATH: ${{ github.workspace }}/approval-provenance-attestation.json
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
-            echo "Unable to determine PR number for event ${EVENT_NAME}."
-            exit 1
-          fi
 
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           export PR_JSON="$tmp/pr.json"
           export REVIEWS_DIR="$tmp/pages"
           mkdir -p "$REVIEWS_DIR"
+
+          cat > "$tmp/attest.py" <<'PY'
+          import glob, hashlib, json, os, sys
+          from datetime import datetime, timezone
+
+          SCHEMA_VERSION = "0.5"
+          POLICY_VERSION = "approval-provenance-v0.4"
+          CHECK_NAME = "approval-provenance"
+          SOURCE_SYSTEM = "github-actions"
+          SUBSTITUTIVE = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
+          CANONICALIZATION = {
+              "algorithm": "JCS-compatible subset (NOT full RFC 8785)",
+              "json_dumps": "sort_keys=True, separators=(',', ':'), ensure_ascii=False",
+              "encoding": "utf-8",
+              "hash": "SHA-256",
+              "hashed_payload": "all fields except evidence_hash and attestation_id",
+          }
+
+
+          class FailClosed(Exception):
+              def __init__(self, reason):
+                  super().__init__(reason)
+                  self.reason = reason
+
+
+          def canonical_dumps(obj):
+              return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+          def attach_hash(attestation):
+              payload = {
+                  key: value
+                  for key, value in attestation.items()
+                  if key not in ("evidence_hash", "attestation_id")
+              }
+              digest = hashlib.sha256(canonical_dumps(payload).encode("utf-8")).hexdigest()
+              attestation["evidence_hash"] = digest
+              attestation["attestation_id"] = "sha256:" + digest
+              return attestation
+
+
+          def parse_submitted_at(review):
+              raw = review.get("submitted_at")
+              if not isinstance(raw, str) or not raw.strip():
+                  raise FailClosed("MALFORMED_REVIEW_MISSING_SUBMITTED_AT")
+              token = raw.strip()
+              if token.endswith("Z"):
+                  token = token[:-1] + "+00:00"
+              try:
+                  return datetime.fromisoformat(token)
+              except ValueError:
+                  raise FailClosed("MALFORMED_REVIEW_UNPARSEABLE_SUBMITTED_AT")
+
+
+          def parse_review_id(review):
+              rid = review.get("id")
+              try:
+                  return int(rid)
+              except (TypeError, ValueError):
+                  raise FailClosed("MALFORMED_REVIEW_MISSING_ID")
+
+
+          def latest_substitutive_by_allowlisted(reviews, allowed):
+              if not isinstance(reviews, list):
+                  raise FailClosed("REVIEWS_PAYLOAD_NOT_A_LIST")
+              latest = {}
+              for review in reviews:
+                  if not isinstance(review, dict):
+                      raise FailClosed("MALFORMED_REVIEW_NOT_AN_OBJECT")
+                  user = (review.get("user") or {}).get("login")
+                  if user not in allowed:
+                      continue
+                  state = review.get("state")
+                  if state not in SUBSTITUTIVE:
+                      continue
+                  key = (parse_submitted_at(review), parse_review_id(review))
+                  prev = latest.get(user)
+                  if prev is None or key > (prev[0], prev[1]):
+                      latest[user] = (key[0], key[1], review)
+              return latest
+
+
+          def evaluate_reviews(reviews, head, allowed):
+              if not isinstance(head, str) or not head.strip():
+                  return {
+                      "decision": "INDETERMINATE",
+                      "decision_reason": "PR_HEAD_SHA_UNAVAILABLE",
+                      "enforcement_pass": False,
+                      "reviewer_identity": None,
+                      "selected_review": None,
+                      "latest": {},
+                  }
+              head = head.strip()
+              try:
+                  latest = latest_substitutive_by_allowlisted(reviews, allowed)
+              except FailClosed as exc:
+                  return {
+                      "decision": "INDETERMINATE",
+                      "decision_reason": exc.reason,
+                      "enforcement_pass": False,
+                      "reviewer_identity": None,
+                      "selected_review": None,
+                      "latest": {},
+                  }
+              approved_by = None
+              selected = None
+              for user, (_ts, _rid, review) in latest.items():
+                  commit_id = review.get("commit_id")
+                  if not isinstance(commit_id, str) or not commit_id.strip():
+                      return {
+                          "decision": "INDETERMINATE",
+                          "decision_reason": "MALFORMED_LATEST_SUBSTITUTIVE_MISSING_COMMIT_ID",
+                          "enforcement_pass": False,
+                          "reviewer_identity": user,
+                          "selected_review": review,
+                          "latest": latest,
+                      }
+                  if review.get("state") == "APPROVED" and commit_id == head:
+                      approved_by = user
+                      selected = review
+                      break
+              if approved_by:
+                  return {
+                      "decision": "APPROVED",
+                      "decision_reason": "QUALIFYING_APPROVED_ON_CURRENT_HEAD",
+                      "enforcement_pass": True,
+                      "reviewer_identity": approved_by,
+                      "selected_review": selected,
+                      "latest": latest,
+                  }
+              reason = "NO_QUALIFYING_APPROVED_REVIEW_ON_CURRENT_HEAD"
+              evidence_user = None
+              evidence_review = None
+              for user, (_ts, _rid, review) in latest.items():
+                  evidence_user = user
+                  evidence_review = review
+                  state = review.get("state")
+                  commit_id = review.get("commit_id")
+                  if state == "CHANGES_REQUESTED":
+                      reason = "LATEST_SUBSTITUTIVE_IS_CHANGES_REQUESTED"
+                  elif state == "DISMISSED":
+                      reason = "LATEST_SUBSTITUTIVE_IS_DISMISSED"
+                  elif state == "APPROVED" and commit_id != head:
+                      reason = "STALE_APPROVAL_COMMIT_ID_NOT_CURRENT_HEAD"
+                  break
+              return {
+                  "decision": "REJECTED",
+                  "decision_reason": reason,
+                  "enforcement_pass": False,
+                  "reviewer_identity": evidence_user,
+                  "selected_review": evidence_review,
+                  "latest": latest,
+              }
+
+
+          def reviewer_fields(review, login=None):
+              if not isinstance(review, dict):
+                  return {
+                      "reviewer_identity": login,
+                      "reviewer_user_id": None,
+                      "review_id": None,
+                      "review_state": None,
+                      "review_commit_id": None,
+                      "review_submitted_at": None,
+                  }
+              user = review.get("user") or {}
+              identity = login if login is not None else user.get("login")
+              uid = user.get("id")
+              try:
+                  uid = int(uid)
+              except (TypeError, ValueError):
+                  uid = None
+              rid = review.get("id")
+              try:
+                  rid = int(rid)
+              except (TypeError, ValueError):
+                  rid = None
+              commit_id = review.get("commit_id")
+              if not isinstance(commit_id, str) or not commit_id.strip():
+                  commit_id = None
+              submitted = review.get("submitted_at")
+              if not isinstance(submitted, str) or not submitted.strip():
+                  submitted = None
+              return {
+                  "reviewer_identity": identity,
+                  "reviewer_user_id": uid,
+                  "review_id": rid,
+                  "review_state": review.get("state"),
+                  "review_commit_id": commit_id,
+                  "review_submitted_at": submitted,
+              }
+
+
+          def load_pr():
+              path = os.environ.get("PR_JSON") or ""
+              if not path or not os.path.isfile(path):
+                  return {}
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      pr = json.load(fh)
+              except (OSError, json.JSONDecodeError):
+                  return {}
+              return pr if isinstance(pr, dict) else {}
+
+
+          def load_reviews():
+              reviews_dir = os.environ.get("REVIEWS_DIR") or ""
+              if not reviews_dir or not os.path.isdir(reviews_dir):
+                  raise FailClosed("NO_REVIEW_PAGES_COLLECTED")
+              paths = sorted(
+                  glob.glob(os.path.join(reviews_dir, "*.json")),
+                  key=lambda p: int(os.path.splitext(os.path.basename(p))[0]),
+              )
+              if not paths:
+                  raise FailClosed("NO_REVIEW_PAGES_COLLECTED")
+              reviews = []
+              for path in paths:
+                  try:
+                      with open(path, encoding="utf-8") as fh:
+                          page = json.load(fh)
+                  except (OSError, json.JSONDecodeError):
+                      raise FailClosed("MALFORMED_REVIEWS_JSON")
+                  if not isinstance(page, list):
+                      raise FailClosed("REVIEWS_PAYLOAD_NOT_A_LIST")
+                  reviews.extend(page)
+              return reviews, len(paths)
+
+
+          def env_int(name, default=None):
+              raw = os.environ.get(name)
+              if raw is None or raw == "":
+                  return default
+              try:
+                  return int(raw)
+              except ValueError:
+                  return raw
+
+
+          def build_source_facts(result, head_sha, review_count, page_count, allowed):
+              summaries = []
+              for user, (_ts, _rid, review) in (result.get("latest") or {}).items():
+                  summaries.append({
+                      "login": user,
+                      "state": review.get("state"),
+                      "commit_id": review.get("commit_id"),
+                      "id": review.get("id"),
+                      "submitted_at": review.get("submitted_at"),
+                  })
+              payload_head = (os.environ.get("PAYLOAD_HEAD_SHA") or "").strip() or None
+              return {
+                  "authority_source": "live-github-api",
+                  "attestation_role": "evidence-never-authority",
+                  "markdown_consulted": False,
+                  "reviewer_login_source": "github-review-user-login",
+                  "payload_head_sha": payload_head,
+                  "live_head_sha": head_sha,
+                  "allowed_reviewers": sorted(allowed),
+                  "substitutive_states": ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"],
+                  "commented_is_substitutive": False,
+                  "review_page_count": page_count,
+                  "review_count": review_count,
+                  "latest_substitutive_summaries": summaries,
+              }
+
+
+          def emit(result, pr, reviews, page_count):
+              allowed = {x.strip() for x in os.environ.get("ALLOWED_REVIEWERS", "").split(",") if x.strip()}
+              head = ((pr.get("head") or {}).get("sha") or "").strip() or None
+              base_ref = ((pr.get("base") or {}).get("ref") or "").strip() or None
+              base_sha = ((pr.get("base") or {}).get("sha") or "").strip() or None
+              head_ref = ((pr.get("head") or {}).get("ref") or "").strip() or None
+              pr_number = env_int("PR_NUMBER")
+              fields = reviewer_fields(result.get("selected_review"), result.get("reviewer_identity"))
+              observed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+              attestation = {
+                  "schema_version": SCHEMA_VERSION,
+                  "policy_version": POLICY_VERSION,
+                  "repository": os.environ.get("REPO"),
+                  "pull_request_number": pr_number,
+                  "base_ref": base_ref,
+                  "base_sha": base_sha,
+                  "head_ref": head_ref,
+                  "head_sha": head,
+                  "event_name": os.environ.get("EVENT_NAME"),
+                  "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+                  "run_attempt": env_int("GITHUB_RUN_ATTEMPT"),
+                  "workflow_job_id": os.environ.get("GITHUB_JOB"),
+                  "check_name": CHECK_NAME,
+                  "decision": result["decision"],
+                  "decision_reason": result["decision_reason"],
+                  "reviewer_identity": fields["reviewer_identity"],
+                  "reviewer_user_id": fields["reviewer_user_id"],
+                  "review_id": fields["review_id"],
+                  "review_state": fields["review_state"],
+                  "review_commit_id": fields["review_commit_id"],
+                  "review_submitted_at": fields["review_submitted_at"],
+                  "observed_at": observed_at,
+                  "source_system": SOURCE_SYSTEM,
+                  "source_facts": build_source_facts(
+                      result, head, len(reviews), page_count, allowed
+                  ),
+                  "canonicalization": CANONICALIZATION,
+              }
+              attach_hash(attestation)
+              path = os.environ["ATTESTATION_PATH"]
+              directory = os.path.dirname(path)
+              if directory:
+                  os.makedirs(directory, exist_ok=True)
+              with open(path, "w", encoding="utf-8") as fh:
+                  json.dump(attestation, fh, indent=2, ensure_ascii=False)
+                  fh.write("\n")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as fh:
+                      fh.write("## approval-provenance attestation (evidence, not authority)\n\n")
+                      fh.write("This attestation is **evidence**. It is **never** authority.\n")
+                      fh.write("PASS/FAIL was decided from live GitHub API data before this file was written.\n")
+                      fh.write("Do not read this artifact to decide PASS/FAIL.\n\n")
+                      fh.write("- decision: `" + str(attestation["decision"]) + "`\n")
+                      fh.write("- decision_reason: `" + str(attestation["decision_reason"]) + "`\n")
+                      fh.write("- head_sha: `" + str(attestation.get("head_sha")) + "`\n")
+                      fh.write("- reviewer_identity: `" + str(attestation.get("reviewer_identity")) + "`\n")
+                      fh.write("- attestation_id: `" + str(attestation.get("attestation_id")) + "`\n")
+                      fh.write("- evidence_hash: `" + str(attestation.get("evidence_hash")) + "`\n")
+              return attestation
+
+
+          def finish(result, pr, reviews, page_count, head):
+              emit(result, pr, reviews, page_count)
+              payload_head = (os.environ.get("PAYLOAD_HEAD_SHA") or "").strip()
+              print(
+                  "event=" + str(os.environ.get("EVENT_NAME"))
+                  + " pr=" + str(os.environ.get("PR_NUMBER"))
+                  + " head=" + str(head or "")
+                  + " review_pages=" + str(page_count)
+              )
+              if payload_head and head and payload_head != head:
+                  print(
+                      "Webhook payload head " + payload_head
+                      + " differs from current API head " + head
+                      + "; using API head."
+                  )
+              if result["decision"] == "APPROVED":
+                  print("approval-provenance PASS reviewer=" + result["reviewer_identity"])
+                  return 0
+              if result["decision"] == "REJECTED":
+                  print(
+                      "No qualifying GitHub APPROVED review found from an allowed human reviewer for current PR head "
+                      + str(head or "")
+                      + "."
+                  )
+                  print("decision_reason=" + result["decision_reason"])
+                  return 1
+              print("approval-provenance INDETERMINATE fail-closed reason=" + result["decision_reason"])
+              return 1
+
+
+          def main():
+              pr = load_pr()
+              allowed = {x.strip() for x in os.environ.get("ALLOWED_REVIEWERS", "").split(",") if x.strip()}
+              head = ((pr.get("head") or {}).get("sha") or "").strip()
+              if len(sys.argv) >= 2 and sys.argv[1] == "emit-indeterminate":
+                  reason = sys.argv[2] if len(sys.argv) > 2 else "INDETERMINATE_RUNTIME"
+                  result = {
+                      "decision": "INDETERMINATE",
+                      "decision_reason": reason,
+                      "enforcement_pass": False,
+                      "reviewer_identity": None,
+                      "selected_review": None,
+                      "latest": {},
+                  }
+                  raise SystemExit(finish(result, pr, [], 0, head))
+              try:
+                  reviews, page_count = load_reviews()
+              except FailClosed as exc:
+                  result = {
+                      "decision": "INDETERMINATE",
+                      "decision_reason": exc.reason,
+                      "enforcement_pass": False,
+                      "reviewer_identity": None,
+                      "selected_review": None,
+                      "latest": {},
+                  }
+                  raise SystemExit(finish(result, pr, [], 0, head))
+              result = evaluate_reviews(reviews, head, allowed)
+              raise SystemExit(finish(result, pr, reviews, page_count, head))
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+          fail_closed_indeterminate() {
+            local reason="$1"
+            shift
+            echo "$@"
+            python3 "$tmp/attest.py" emit-indeterminate "$reason" || true
+            if [ -f "${ATTESTATION_PATH}" ]; then
+              echo "attestation_written=true" >> "${GITHUB_OUTPUT}"
+            fi
+            exit 1
+          }
+
+          if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
+            fail_closed_indeterminate PR_NUMBER_UNAVAILABLE \
+              "Unable to determine PR number for event ${EVENT_NAME}."
+          fi
 
           api() {
             curl --fail-with-body --silent --show-error \
@@ -160,29 +571,35 @@ jobs:
               "$@"
           }
 
-          api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" > "$PR_JSON"
+          if ! api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" > "$PR_JSON"; then
+            fail_closed_indeterminate PR_API_FAILURE \
+              "Failed to fetch GitHub pull request; fail-closed."
+          fi
 
           page=1
           max_pages=50
           while true; do
             if [ "$page" -gt "$max_pages" ]; then
-              echo "Reviews pagination exceeded defensive max_pages=${max_pages}; fail-closed."
-              exit 1
+              fail_closed_indeterminate PAGINATION_MAX_EXCEEDED \
+                "Reviews pagination exceeded defensive max_pages=${max_pages}; fail-closed."
             fi
             body="$REVIEWS_DIR/${page}.json"
             hdr="$tmp/headers.${page}"
             url="https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100&page=${page}"
             if ! api -D "$hdr" "$url" > "$body"; then
-              echo "Failed to fetch GitHub reviews page ${page}; fail-closed."
-              exit 1
+              fail_closed_indeterminate REVIEWS_API_FAILURE \
+                "Failed to fetch GitHub reviews page ${page}; fail-closed."
             fi
-            page_len="$(python3 -c 'import json, sys, textwrap; exec(textwrap.dedent("""
+            if ! page_len="$(python3 -c 'import json, sys, textwrap; exec(textwrap.dedent("""
             import json, sys
             data = json.load(open(sys.argv[1], encoding="utf-8"))
             if not isinstance(data, list):
                 raise SystemExit("GitHub reviews page is not a list.")
             print(len(data))
-            """))' "$body")"
+            """))' "$body")"; then
+              fail_closed_indeterminate REVIEWS_PAYLOAD_NOT_A_LIST \
+                "GitHub reviews page is not a list; fail-closed."
+            fi
             has_next=0
             if grep -Eiq 'rel="next"' "$hdr"; then
               has_next=1
@@ -194,93 +611,21 @@ jobs:
             break
           done
 
-          PR_HEAD_SHA="$(python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
-          import json, os
-          with open(os.environ["PR_JSON"], encoding="utf-8") as fh:
-              pr = json.load(fh)
-          head = ((pr.get("head") or {}).get("sha") or "").strip()
-          if not head:
-              raise SystemExit("Unable to determine current PR head SHA from GitHub API.")
-          print(head)
-          """))')"
-
-          echo "event=${EVENT_NAME} pr=${PR_NUMBER} head=${PR_HEAD_SHA} review_pages=${page}"
-          if [ -n "${PAYLOAD_HEAD_SHA}" ] && [ "${PAYLOAD_HEAD_SHA}" != "${PR_HEAD_SHA}" ]; then
-            echo "Webhook payload head ${PAYLOAD_HEAD_SHA} differs from current API head ${PR_HEAD_SHA}; using API head."
+          set +e
+          python3 "$tmp/attest.py"
+          rc=$?
+          set -e
+          if [ -f "${ATTESTATION_PATH}" ]; then
+            echo "attestation_written=true" >> "${GITHUB_OUTPUT}"
           fi
+          exit "${rc}"
 
-          approved_by="$(PR_HEAD_SHA="${PR_HEAD_SHA}" python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
-          import glob, json, os
-          from datetime import datetime
-          paths = sorted(
-              glob.glob(os.path.join(os.environ["REVIEWS_DIR"], "*.json")),
-              key=lambda p: int(os.path.splitext(os.path.basename(p))[0]),
-          )
-          if not paths:
-              raise SystemExit("No GitHub review pages were collected; fail-closed.")
-          reviews = []
-          for path in paths:
-              with open(path, encoding="utf-8") as fh:
-                  page = json.load(fh)
-              if not isinstance(page, list):
-                  raise SystemExit("GitHub reviews payload is not a list.")
-              reviews.extend(page)
-          allowed = {x.strip() for x in os.environ["ALLOWED_REVIEWERS"].split(",") if x.strip()}
-          head = os.environ["PR_HEAD_SHA"]
-          substitutive = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
-
-          def submitted_at(review):
-              raw = review.get("submitted_at")
-              if not isinstance(raw, str) or not raw.strip():
-                  raise SystemExit("Review missing usable submitted_at; fail-closed.")
-              token = raw.strip()
-              if token.endswith("Z"):
-                  token = token[:-1] + "+00:00"
-              try:
-                  return datetime.fromisoformat(token)
-              except ValueError:
-                  raise SystemExit("Review submitted_at is not parseable; fail-closed.")
-
-          def review_id(review):
-              rid = review.get("id")
-              try:
-                  return int(rid)
-              except (TypeError, ValueError):
-                  raise SystemExit("Review missing usable id; fail-closed.")
-
-          latest = {}
-          for review in reviews:
-              if not isinstance(review, dict):
-                  raise SystemExit("Review entry is not an object; fail-closed.")
-              user = (review.get("user") or {}).get("login")
-              if user not in allowed:
-                  continue
-              state = review.get("state")
-              if state not in substitutive:
-                  continue
-              key = (submitted_at(review), review_id(review))
-              prev = latest.get(user)
-              if prev is None or key > (prev[0], prev[1]):
-                  latest[user] = (key[0], key[1], review)
-
-          approved_by = ""
-          for user, (_ts, _rid, review) in latest.items():
-              commit_id = review.get("commit_id")
-              if not isinstance(commit_id, str) or not commit_id.strip():
-                  raise SystemExit("Latest substitutive review missing commit_id; fail-closed.")
-              if review.get("state") == "APPROVED" and commit_id == head:
-                  approved_by = user
-                  break
-          if approved_by:
-              print(approved_by)
-          """))')"
-
-          if [ -z "$approved_by" ]; then
-            echo "No qualifying GitHub APPROVED review found from an allowed human reviewer for current PR head ${PR_HEAD_SHA}."
-            exit 1
-          fi
-
-          echo "approval-provenance PASS reviewer=${approved_by}"
+      - name: Upload attestation artifact
+        if: ${{ always() && steps.evaluate.outputs.attestation_written == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: approval-provenance-attestation
+          path: ${{ github.workspace }}/approval-provenance-attestation.json
 
   task-boundary:
     name: task-boundary
