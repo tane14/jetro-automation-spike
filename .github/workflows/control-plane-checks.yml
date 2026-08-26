@@ -4,10 +4,12 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, ready_for_review, submitted]
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   contract-integrity:
@@ -111,6 +113,52 @@ jobs:
           done <<< "$approval_files"
 
           echo "approval-integrity PASS"
+
+  approval-provenance:
+    name: approval-provenance
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Validate human approval provenance from GitHub review identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOWED_REVIEWERS: machubsystem-sketch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          reviews="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+
+          approved_by="$(python3 - <<'PY'
+import json, os
+reviews = json.loads(os.environ['REVIEWS'])
+allowed = {x.strip() for x in os.environ['ALLOWED_REVIEWERS'].split(',') if x.strip()}
+head = os.environ['PR_HEAD_SHA']
+for review in reversed(reviews):
+    user = (review.get('user') or {}).get('login')
+    state = review.get('state')
+    commit_id = review.get('commit_id')
+    if user in allowed and state == 'APPROVED' and commit_id == head:
+        print(user)
+        break
+PY
+          )" 
+
+          if [ -z "$approved_by" ]; then
+            echo "No qualifying GitHub APPROVED review found from an allowed human reviewer for current PR head ${PR_HEAD_SHA}."
+            exit 1
+          fi
+
+          echo "approval-provenance PASS reviewer=${approved_by}"
+        env:
+          REVIEWS: ${{ toJson(fromJson('[]')) }}
 
   task-boundary:
     name: task-boundary
