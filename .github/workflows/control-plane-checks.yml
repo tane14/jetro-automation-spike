@@ -4,7 +4,14 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened, ready_for_review, submitted]
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  pull_request_review:
+    types:
+      - submitted
   workflow_dispatch:
 
 permissions:
@@ -15,6 +22,7 @@ jobs:
   contract-integrity:
     name: contract-integrity
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request_review' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +54,7 @@ jobs:
   approval-integrity:
     name: approval-integrity
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request_review' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -117,39 +126,72 @@ jobs:
   approval-provenance:
     name: approval-provenance
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') && github.event.pull_request.base.ref == 'main' }}
     steps:
       - name: Validate human approval provenance from GitHub review identity
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PAYLOAD_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ALLOWED_REVIEWERS: machubsystem-sketch
         shell: bash
         run: |
           set -euo pipefail
 
-          reviews="$(curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"
+          if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
+            echo "Unable to determine PR number for event ${EVENT_NAME}."
+            exit 1
+          fi
 
-          approved_by="$(python3 - <<'PY'
-import json, os
-reviews = json.loads(os.environ['REVIEWS'])
-allowed = {x.strip() for x in os.environ['ALLOWED_REVIEWERS'].split(',') if x.strip()}
-head = os.environ['PR_HEAD_SHA']
-for review in reversed(reviews):
-    user = (review.get('user') or {}).get('login')
-    state = review.get('state')
-    commit_id = review.get('commit_id')
-    if user in allowed and state == 'APPROVED' and commit_id == head:
-        print(user)
-        break
-PY
-          )" 
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          export PR_JSON="$tmp/pr.json"
+          export REVIEWS_JSON="$tmp/reviews.json"
+
+          api() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$1"
+          }
+
+          api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" > "$PR_JSON"
+          api "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100" > "$REVIEWS_JSON"
+
+          PR_HEAD_SHA="$(python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
+          import json, os
+          with open(os.environ["PR_JSON"], encoding="utf-8") as fh:
+              pr = json.load(fh)
+          head = ((pr.get("head") or {}).get("sha") or "").strip()
+          if not head:
+              raise SystemExit("Unable to determine current PR head SHA from GitHub API.")
+          print(head)
+          """))')"
+
+          echo "event=${EVENT_NAME} pr=${PR_NUMBER} head=${PR_HEAD_SHA}"
+          if [ -n "${PAYLOAD_HEAD_SHA}" ] && [ "${PAYLOAD_HEAD_SHA}" != "${PR_HEAD_SHA}" ]; then
+            echo "Webhook payload head ${PAYLOAD_HEAD_SHA} differs from current API head ${PR_HEAD_SHA}; using API head."
+          fi
+
+          approved_by="$(PR_HEAD_SHA="${PR_HEAD_SHA}" python3 -c 'import json, os, textwrap; exec(textwrap.dedent("""
+          import json, os
+          with open(os.environ["REVIEWS_JSON"], encoding="utf-8") as fh:
+              reviews = json.load(fh)
+          if not isinstance(reviews, list):
+              raise SystemExit("GitHub reviews payload is not a list.")
+          allowed = {x.strip() for x in os.environ["ALLOWED_REVIEWERS"].split(",") if x.strip()}
+          head = os.environ["PR_HEAD_SHA"]
+          for review in reversed(reviews):
+              user = (review.get("user") or {}).get("login")
+              state = review.get("state")
+              commit_id = review.get("commit_id")
+              if user in allowed and state == "APPROVED" and commit_id == head:
+                  print(user)
+                  break
+          """))')"
 
           if [ -z "$approved_by" ]; then
             echo "No qualifying GitHub APPROVED review found from an allowed human reviewer for current PR head ${PR_HEAD_SHA}."
@@ -157,12 +199,11 @@ PY
           fi
 
           echo "approval-provenance PASS reviewer=${approved_by}"
-        env:
-          REVIEWS: ${{ toJson(fromJson('[]')) }}
 
   task-boundary:
     name: task-boundary
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request_review' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -192,6 +233,7 @@ PY
   validation-evidence:
     name: validation-evidence
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request_review' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -220,6 +262,7 @@ PY
   lifecycle-state:
     name: lifecycle-state
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request_review' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
