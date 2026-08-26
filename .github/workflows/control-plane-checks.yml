@@ -176,7 +176,13 @@ jobs:
               echo "Failed to fetch GitHub reviews page ${page}; fail-closed."
               exit 1
             fi
-            page_len="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit("GitHub reviews page is not a list.") if not isinstance(data, list) else print(len(data))' "$body")"
+            page_len="$(python3 -c 'import json, sys, textwrap; exec(textwrap.dedent("""
+            import json, sys
+            data = json.load(open(sys.argv[1], encoding="utf-8"))
+            if not isinstance(data, list):
+                raise SystemExit("GitHub reviews page is not a list.")
+            print(len(data))
+            """))' "$body")"
             has_next=0
             if grep -Eiq 'rel="next"' "$hdr"; then
               has_next=1
