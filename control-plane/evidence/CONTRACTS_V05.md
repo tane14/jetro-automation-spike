@@ -21,7 +21,9 @@ No lease service, database, scheduler, automatic agent, HTTP API, runner, or Git
 - `src/contracts/index.js` — future API/Web Control Plane import surface
 - `src/contracts/contracts-v05.test.js` — required fixture and semantic tests
 
-These modules validate **contract shape and boundaries**. They are not an authority source. They do not interpret `lease_token` as approval. They do not treat Claude verdicts or Markdown as GitHub approval.
+These modules validate **contract shape and boundaries**. They are not an authority source. They do not interpret `lease_token` as approval. They do not treat Claude verdicts or Markdown as GitHub approval. `validateDocument()` is never sufficient for authority; review/approval chains require `validateHandoffChain()` / `validateCorrelation()`, which still do not replace live GitHub approval-provenance v0.4.
+
+Hardening on PR #21: `claude_advisory` cannot use `verdict: APPROVED`; reviewer identity is compared to the executor regardless of declared role; `human_approval_gate.reviewed_head_sha` must match execution/review heads.
 
 ## Validation command
 

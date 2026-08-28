@@ -55,7 +55,8 @@
     },
     "verdict": {
       "type": "string",
-      "enum": ["PASS", "PASS_WITH_QUALIFICATIONS", "FAIL", "CHANGES_REQUESTED", "APPROVED"]
+      "enum": ["PASS", "PASS_WITH_QUALIFICATIONS", "FAIL", "CHANGES_REQUESTED", "APPROVED"],
+      "description": "APPROVED is valid only for github_approval_record. claude_advisory may use PASS, PASS_WITH_QUALIFICATIONS, FAIL, or CHANGES_REQUESTED only."
     },
     "reviewed_head_sha": {
       "$ref": "#/$defs/git_sha",
@@ -108,17 +109,39 @@
       "description": "This document does not grant approval. Claude verdict is not GitHub approval. Markdown records are not the authority source."
     }
   },
-  "if": {
-    "properties": {
-      "state": {
-        "const": "PUBLISHED"
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "PUBLISHED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["reviewed_head_sha", "verdict"]
       }
     },
-    "required": ["state"]
-  },
-  "then": {
-    "required": ["reviewed_head_sha", "verdict"]
-  },
+    {
+      "if": {
+        "properties": {
+          "verdict_kind": {
+            "const": "claude_advisory"
+          }
+        },
+        "required": ["verdict_kind", "verdict"]
+      },
+      "then": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": ["PASS", "PASS_WITH_QUALIFICATIONS", "FAIL", "CHANGES_REQUESTED"]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "mission_id": {
       "type": "string",

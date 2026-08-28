@@ -4,7 +4,19 @@
  * Fail-closed validator for Control Plane contracts v0.5.
  * Invalid, missing, or malformed documents are rejected.
  * This module does not grant authority and is not a GitHub integration runtime.
+ *
+ * validateDocument() checks one document's shape/boundaries only.
+ * It is NEVER sufficient for authority decisions.
+ * Chains that include review or a human approval gate MUST also run
+ * validateHandoffChain() and/or validateCorrelation().
+ * Live human authority remains GitHub PR review APPROVED via
+ * approval-provenance v0.4. Even a valid chain is not that authority.
  */
+
+const NOT_AUTHORITY = {
+  sufficient_for_authority: false,
+  requires_live_github_approval: true,
+};
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -49,7 +61,7 @@ const BINDING_CHILD_KINDS = new Set([
 const schemaCache = new Map();
 
 function fail(errors) {
-  return { valid: false, errors };
+  return { valid: false, errors, ...NOT_AUTHORITY };
 }
 
 function loadSchema(kind) {
@@ -91,7 +103,7 @@ function validateDocument(kind, doc) {
     errors.push(...lifecycle.errors);
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, ...NOT_AUTHORITY };
 }
 
 function validateHandoffChain(bundle) {
@@ -144,11 +156,12 @@ function validateHandoffChain(bundle) {
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, ...NOT_AUTHORITY };
 }
 
 module.exports = {
   SCHEMA_FILES,
+  NOT_AUTHORITY,
   validateDocument,
   validateHandoffChain,
 };

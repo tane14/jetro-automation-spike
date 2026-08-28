@@ -87,6 +87,9 @@ function authorityErrors(kind, doc) {
     if (doc.authority_rank && doc.authority_rank !== "advisory") {
       errors.push("Claude review must remain advisory");
     }
+    if (doc.verdict === "APPROVED") {
+      errors.push("claude_advisory cannot use verdict APPROVED");
+    }
   }
 
   const authoritySource = doc.authority_source;

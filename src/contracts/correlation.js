@@ -36,7 +36,12 @@ function collectExecutorIdentities(bundle) {
 function validateCorrelation(bundle) {
   const errors = [];
   if (!bundle || typeof bundle !== "object") {
-    return { valid: false, errors: ["bundle must be an object"] };
+    return {
+      valid: false,
+      errors: ["bundle must be an object"],
+      sufficient_for_authority: false,
+      requires_live_github_approval: true,
+    };
   }
 
   const docs = [
@@ -81,12 +86,15 @@ function validateCorrelation(bundle) {
     }
   }
 
-  if (executionHandoff && reviewHandoff && reviewHandoff.state === "PUBLISHED") {
-    if (executionHandoff.head_sha && reviewHandoff.reviewed_head_sha) {
-      if (executionHandoff.head_sha !== reviewHandoff.reviewed_head_sha) {
-        errors.push("published review.reviewed_head_sha must equal handoff.head_sha");
-      }
-    }
+  const headValues = [
+    executionHandoff && executionHandoff.head_sha,
+    reviewHandoff && reviewHandoff.reviewed_head_sha,
+    bundle.approval_gate && bundle.approval_gate.reviewed_head_sha,
+  ].filter(Boolean);
+  if (new Set(headValues).size > 1) {
+    errors.push(
+      "reviewed head SHA mismatch across execution_handoff.head_sha, review_handoff.reviewed_head_sha, and human_approval_gate.reviewed_head_sha"
+    );
   }
 
   const executors = collectExecutorIdentities(bundle);
@@ -108,14 +116,10 @@ function validateCorrelation(bundle) {
     );
   }
 
-  if (
-    reviewer &&
-    reviewHandoff &&
-    reviewHandoff.reviewer &&
-    reviewHandoff.reviewer.role === "executor" &&
-    executors.includes(reviewer)
-  ) {
-    errors.push("executor cannot self-approve: reviewer identity is the executor");
+  if (reviewer && executors.includes(reviewer)) {
+    errors.push(
+      "executor cannot self-approve: reviewer identity is the executor"
+    );
   }
 
   if (Array.isArray(bundle.executions)) {
@@ -131,7 +135,12 @@ function validateCorrelation(bundle) {
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return {
+    valid: errors.length === 0,
+    errors,
+    sufficient_for_authority: false,
+    requires_live_github_approval: true,
+  };
 }
 
 module.exports = { validateCorrelation };

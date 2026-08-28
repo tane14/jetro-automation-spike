@@ -39,7 +39,7 @@ Rules:
 
 - `authority_claim` is always `"none"` on these documents.
 - Executor cannot transform a handoff into human authority.
-- Claude review remains advisory (`verdict_kind: claude_advisory`, `authority_rank: advisory`).
+- Claude review remains advisory (`verdict_kind: claude_advisory`, `authority_rank: advisory`). `claude_advisory` cannot use `verdict: APPROVED`.
 - Human approval remains explicitly authoritative **only** via the existing GitHub mechanism (approval-provenance v0.4: live PR review `APPROVED` from an allowed human).
 - Markdown does not grant authority. `authority_source` for the gate is `github_pr_review` only.
 - Evidence is referencable (`input_role: reference_only`) and never authoritative input.
@@ -59,7 +59,7 @@ Rules:
 
 Identifiers correlate by explicit fields, not by assuming date/sequence suffixes match.
 
-Required: `mission_id`, `task_id`, `contract_id` copied onto children. `contract_hash` copied from the Task Contract. Handoff references `execution_id`. Published review `reviewed_head_sha` must equal handoff `head_sha`. Executor identity must not equal `github_approver` / gate `reviewer_identity`.
+Required: `mission_id`, `task_id`, `contract_id` copied onto children. `contract_hash` copied from the Task Contract. Handoff references `execution_id`. When present, `execution_handoff.head_sha`, `review_handoff.reviewed_head_sha`, and `human_approval_gate.reviewed_head_sha` MUST match. Executor identity must not equal reviewer identity, `github_approver`, or gate `reviewer_identity`, regardless of a spoofed `role`.
 
 ## Lifecycle
 
@@ -86,3 +86,7 @@ Invalid documents fail closed. Markdown, executor, and Claude cannot claim human
 ## Future API / Web Control Plane
 
 `src/contracts/index.js` is the intended import surface for a future read-mostly control plane. It is not an HTTP API and does not reimplement GitHub authority. The existing Web MVP remains a separate read-only projection.
+
+`validateDocument()` validates **one document**. A `valid: true` result is **not** an authority decision and the result always sets `sufficient_for_authority: false`. Consumers MUST NOT approve, merge, or treat a document as GitHub approval from document validation alone.
+
+Chains that include review or a human approval gate MUST also run `validateHandoffChain()` and/or `validateCorrelation()` (head SHA alignment, executor ≠ reviewer, copied `contract_hash`). Those APIs still do not grant human authority. Live authority remains a GitHub PR review `APPROVED` from an allowed human, verified by approval-provenance v0.4.

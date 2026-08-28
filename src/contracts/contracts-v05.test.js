@@ -438,3 +438,91 @@ test("valid task lifecycle transitions pass; skipped states fail", () => {
   assert.equal(validateTransition("task", "REVIEWED", "APPROVED").valid, true);
   assert.equal(validateTransition("task", "READY", "MERGED").valid, false);
 });
+
+test("claude_advisory + verdict APPROVED → FAIL", () => {
+  const review = withTaskHash(fixture("valid-review.json"), boundTask());
+  review.verdict_kind = "claude_advisory";
+  review.verdict = "APPROVED";
+  const result = validateDocument("review_handoff", review);
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.errors.some(
+      (err) =>
+        err.includes("claude_advisory cannot use verdict APPROVED") ||
+        err.includes("value not in enum")
+    ),
+    result.errors.join("; ")
+  );
+});
+
+test("executor identity == reviewer.identity → FAIL", () => {
+  const chain = validChain();
+  chain.review_handoff.reviewer = {
+    kind: "agent",
+    identity: chain.task.assigned_to.identity,
+    role: "reviewer",
+  };
+  const correlation = validateCorrelation(chain);
+  assert.equal(correlation.valid, false);
+  assert.ok(
+    correlation.errors.some((err) => err.includes("reviewer identity is the executor")),
+    correlation.errors.join("; ")
+  );
+  const chained = validateHandoffChain(chain);
+  assert.equal(chained.valid, false);
+});
+
+test("approval gate head correlation → PASS", () => {
+  const chain = validChain();
+  assert.equal(
+    chain.execution_handoff.head_sha,
+    chain.review_handoff.reviewed_head_sha
+  );
+  assert.equal(
+    chain.execution_handoff.head_sha,
+    chain.approval_gate.reviewed_head_sha
+  );
+  const correlation = validateCorrelation(chain);
+  assert.equal(correlation.valid, true, correlation.errors.join("; "));
+  const chained = validateHandoffChain(chain);
+  assert.equal(chained.valid, true, chained.errors.join("; "));
+});
+
+test("approval gate head correlation mismatch → FAIL", () => {
+  const chain = validChain();
+  chain.approval_gate.reviewed_head_sha = "cccccccccccccccccccccccccccccccccccccccc";
+  const correlation = validateCorrelation(chain);
+  assert.equal(correlation.valid, false);
+  assert.ok(
+    correlation.errors.some((err) => err.includes("reviewed head SHA mismatch")),
+    correlation.errors.join("; ")
+  );
+  const chained = validateHandoffChain(chain);
+  assert.equal(chained.valid, false);
+});
+
+test("validateDocument is not sufficient for authority", () => {
+  const chain = validChain();
+  const docResult = validateDocument("task_contract", chain.task);
+  assert.equal(docResult.valid, true, docResult.errors.join("; "));
+  assert.equal(docResult.sufficient_for_authority, false);
+  assert.equal(docResult.requires_live_github_approval, true);
+
+  const gateAlone = validateDocument("human_approval_gate", chain.approval_gate);
+  assert.equal(gateAlone.valid, true, gateAlone.errors.join("; "));
+  assert.equal(gateAlone.sufficient_for_authority, false);
+
+  chain.approval_gate.reviewed_head_sha = "cccccccccccccccccccccccccccccccccccccccc";
+  const mismatchedGate = validateDocument("human_approval_gate", chain.approval_gate);
+  assert.equal(mismatchedGate.valid, true, mismatchedGate.errors.join("; "));
+  assert.equal(mismatchedGate.sufficient_for_authority, false);
+
+  const chained = validateHandoffChain(chain);
+  assert.equal(chained.valid, false);
+  assert.equal(chained.sufficient_for_authority, false);
+  assert.equal(chained.requires_live_github_approval, true);
+
+  const correlated = validateCorrelation(chain);
+  assert.equal(correlated.valid, false);
+  assert.equal(correlated.sufficient_for_authority, false);
+});
