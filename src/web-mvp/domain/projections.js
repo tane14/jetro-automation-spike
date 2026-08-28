@@ -15,6 +15,19 @@ export const TASK_STATE_LABELS = {
   approved: "Approved",
   blocked: "Blocked",
   done: "Done",
+  PLANNED: "Planned",
+  READY: "Ready",
+  AUTHORIZED: "Authorized (recorded)",
+  IN_PROGRESS: "In progress",
+  REVIEW_READY: "Review ready",
+  REVIEWED: "Reviewed",
+  CHANGES_REQUESTED: "Changes requested",
+  APPROVED: "Approved (recorded, not GitHub proof)",
+  MERGE_READY: "Merge ready (recorded)",
+  MERGED: "Merged (recorded)",
+  BLOCKED: "Blocked",
+  FAILED: "Failed",
+  CANCELLED: "Cancelled",
 };
 
 /**

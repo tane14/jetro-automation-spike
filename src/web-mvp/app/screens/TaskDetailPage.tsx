@@ -2,12 +2,15 @@ import { AuthorityBadge } from "../components/AuthorityBadge.tsx";
 import { hrefFor } from "../router.ts";
 import { useDataSource } from "../DataSourceContext.tsx";
 import { useAsync } from "../useAsync.ts";
-import {
-  authorityForApproval,
-  authorityForEvidence,
-  authorityForReview,
-} from "../../domain/authority.js";
 import { taskStateLabel } from "../../domain/projections.js";
+import type { AuthorityKind } from "../../domain/types.ts";
+
+function rankKind(rank: string): AuthorityKind {
+  if (rank === "advisory") return "claude_review";
+  if (rank === "reference-only") return "evidence_reference";
+  if (rank === "live-verification-required") return "human_approval_gate";
+  return "contract_record";
+}
 
 export function TaskDetailPage({ taskId }: { taskId: string }) {
   const source = useDataSource();
@@ -26,10 +29,13 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
     return <p role="alert">Task {taskId} was not found.</p>;
   }
 
-  const { task, assignedAgent } = data;
+  const view = data.contractView;
+  const task = data.task;
+  const assignedAgent = data.assignedAgent;
+  const invalid = view && view.chainConsistency !== "valid";
 
   return (
-    <section data-testid="task-detail">
+    <section data-testid="task-detail" data-chain-consistency={view?.chainConsistency ?? "unknown"}>
       <p className="crumb">
         <a href={hrefFor("/tasks")}>Tasks</a>
         {" · "}
@@ -37,20 +43,77 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
           {task.missionId}
         </a>
       </p>
-      <h1>{task.id}</h1>
+      <h1>{view?.taskId || task.id}</h1>
+
+      {invalid ? (
+        <p className="fail-closed" role="alert" data-testid="fail-closed">
+          INVALID / INCONSISTENT CONTRACT CHAIN. Validation errors are not a
+          successful result and are not human approval.
+        </p>
+      ) : null}
+
+      {view ? (
+        <p
+          className="authority-callout"
+          data-testid="authority-flags"
+          data-sufficient-for-authority={String(view.sufficientForAuthority)}
+          data-requires-live-github={String(view.requiresLiveGithubApproval)}
+        >
+          sufficient_for_authority={String(view.sufficientForAuthority)}.
+          requires_live_github_approval={String(view.requiresLiveGithubApproval)}.
+          This view does not authorize execution or approval.
+        </p>
+      ) : null}
+
       <dl className="meta">
         <div>
           <dt>Task ID</dt>
-          <dd data-testid="task-id">{task.id}</dd>
+          <dd data-testid="task-id">{view?.taskId || task.id}</dd>
         </div>
         <div>
-          <dt>State</dt>
-          <dd data-testid="task-state">{taskStateLabel(task.state)}</dd>
+          <dt>Mission</dt>
+          <dd data-testid="task-mission">{view?.missionId || task.missionId}</dd>
+        </div>
+        <div>
+          <dt>Lifecycle state</dt>
+          <dd data-testid="task-state">{taskStateLabel(view?.lifecycleState || task.state)}</dd>
         </div>
         <div>
           <dt>Assigned agent</dt>
           <dd data-testid="assigned-agent">
-            {assignedAgent ? `${assignedAgent.name} (${assignedAgent.kind})` : "Unassigned"}
+            {assignedAgent
+              ? `${assignedAgent.name} (${assignedAgent.kind})`
+              : "Unassigned"}
+          </dd>
+        </div>
+        <div>
+          <dt>Risk tier</dt>
+          <dd data-testid="risk-tier">{view?.riskTier ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Contract / version</dt>
+          <dd data-testid="contract-version">
+            {view ? `${view.contractId} / ${view.schemaVersion}` : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Execution status</dt>
+          <dd data-testid="execution-status">{view?.executionStatus ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Review status</dt>
+          <dd data-testid="review-status">{view?.reviewStatus ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Human approval status</dt>
+          <dd data-testid="approval-status">
+            {view?.humanApprovalStatus ?? task.approvalStatus}
+          </dd>
+        </div>
+        <div>
+          <dt>Head SHA</dt>
+          <dd data-testid="head-sha" className="mono">
+            {view?.headSha ?? task.headSha ?? "—"}
           </dd>
         </div>
         <div>
@@ -65,94 +128,39 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
             )}
           </dd>
         </div>
-        <div>
-          <dt>Head SHA</dt>
-          <dd data-testid="head-sha" className="mono">
-            {task.headSha ?? "—"}
-          </dd>
-        </div>
-        <div>
-          <dt>Approval status</dt>
-          <dd data-testid="approval-status">{task.approvalStatus}</dd>
-        </div>
       </dl>
 
       <h2>Objective</h2>
-      <p data-testid="task-objective">{task.objective}</p>
+      <p data-testid="task-objective">{view?.objective || task.objective}</p>
 
-      <h2>Policy decisions / checks</h2>
-      {data.policyDecisions.length === 0 ? (
-        <p className="muted">No policy decisions recorded.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Check</th>
-              <th>Conclusion</th>
-              <th>Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.policyDecisions.map((decision) => (
-              <tr key={decision.id}>
-                <td>{decision.checkName}</td>
-                <td>{decision.conclusion}</td>
-                <td>{decision.source}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      <h2>Reviews</h2>
-      {data.reviews.length === 0 ? (
-        <p className="muted">No reviews recorded.</p>
-      ) : (
-        <ul className="card-list">
-          {data.reviews.map((review) => {
-            const kind = authorityForReview(review);
-            return (
-              <li
-                key={review.id}
-                className="card"
-                data-testid={`review-${review.id}`}
-              >
-                <div className="card-head">
-                  <strong>{review.author}</strong>
-                  <span>{review.state}</span>
-                  <AuthorityBadge kind={kind} testId={`review-authority-${review.id}`} />
-                </div>
-                <p>{review.body}</p>
+      {view ? (
+        <>
+          <h2>Handoff chain</h2>
+          <ol className="handoff-chain" data-testid="handoff-chain">
+            {view.handoffChain.map((step) => (
+              <li key={step.key} data-chain-step={step.key} data-chain-rank={step.rank}>
+                <strong>{step.title}</strong>
+                <AuthorityBadge kind={rankKind(step.rank)} testId={`chain-authority-${step.key}`} />
+                <span>{step.summary}</span>
               </li>
-            );
-          })}
-        </ul>
-      )}
+            ))}
+          </ol>
+        </>
+      ) : null}
 
-      <h2>Approvals</h2>
-      {data.approvals.length === 0 ? (
-        <p className="muted">No approval records projected.</p>
-      ) : (
-        <ul className="card-list">
-          {data.approvals.map((approval) => (
-            <li key={approval.id} className="card" data-testid={`approval-${approval.id}`}>
-              <div className="card-head">
-                <strong>{approval.reviewerLogin ?? "unknown reviewer"}</strong>
-                <AuthorityBadge
-                  kind={authorityForApproval(approval)}
-                  testId={`approval-authority-${approval.id}`}
-                />
-              </div>
-              <p className="mono">{approval.commitId ?? "no commit"}</p>
-              {approval.artifactPath ? (
-                <p className="muted">Artifact: {approval.artifactPath}</p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+      {view?.humanApprovalStatus === "live_github_verification_required" ? (
+        <section className="gate-panel" data-testid="approval-gate-panel">
+          <h2>Human approval gate</h2>
+          <AuthorityBadge kind="human_approval_gate" testId="gate-authority" />
+          <p data-testid="live-github-banner">
+            LIVE GITHUB VERIFICATION REQUIRED. This JSON record is derived and
+            is not live GitHub approval. approval-provenance remains the human
+            authority check.
+          </p>
+        </section>
+      ) : null}
 
-      <h2>Evidence</h2>
+      <h2>Evidence references</h2>
       {data.evidence.length === 0 ? (
         <p className="muted">No evidence recorded.</p>
       ) : (
@@ -161,16 +169,24 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
             <li key={item.id} className="card" data-testid={`evidence-${item.id}`}>
               <div className="card-head">
                 <strong>{item.path}</strong>
-                <AuthorityBadge
-                  kind={authorityForEvidence(item)}
-                  testId={`evidence-authority-${item.id}`}
-                />
+                <AuthorityBadge kind="evidence_reference" testId={`evidence-authority-${item.id}`} />
               </div>
               <p>{item.summary}</p>
             </li>
           ))}
         </ul>
       )}
+
+      {invalid && view ? (
+        <section data-testid="consistency-errors">
+          <h2>Validation errors</h2>
+          <ul>
+            {view.consistencyErrors.map((err, index) => (
+              <li key={`${index}:${err}`}>{err}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <h2>Timeline</h2>
       <ol className="timeline" data-testid="task-timeline">
@@ -179,9 +195,7 @@ export function TaskDetailPage({ taskId }: { taskId: string }) {
             <time dateTime={entry.occurredAt}>{entry.occurredAt}</time>
             <span className="timeline-type">{entry.type}</span>
             <span>{entry.summary}</span>
-            {entry.authorityKind ? (
-              <AuthorityBadge kind={entry.authorityKind} />
-            ) : null}
+            {entry.authorityKind ? <AuthorityBadge kind={entry.authorityKind} /> : null}
           </li>
         ))}
       </ol>

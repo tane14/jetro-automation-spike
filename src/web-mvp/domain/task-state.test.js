@@ -13,6 +13,19 @@ describe("task state catalog", () => {
       "approved",
       "blocked",
       "done",
+      "PLANNED",
+      "READY",
+      "AUTHORIZED",
+      "IN_PROGRESS",
+      "REVIEW_READY",
+      "REVIEWED",
+      "CHANGES_REQUESTED",
+      "APPROVED",
+      "MERGE_READY",
+      "MERGED",
+      "BLOCKED",
+      "FAILED",
+      "CANCELLED",
     ];
     assert.deepEqual(Object.keys(TASK_STATE_LABELS), expected);
   });

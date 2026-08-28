@@ -175,6 +175,59 @@ td {
   background: #eeeae2;
 }
 
+.rank-reference-only {
+  color: #3d4a66;
+  background: #e7ebf3;
+}
+
+.rank-live-verification-required {
+  color: #7a1f2b;
+  background: #f8e4e7;
+}
+
+.fail-closed {
+  padding: 10px 12px;
+  border: 1px solid #7a1f2b;
+  background: #f8e4e7;
+  color: #7a1f2b;
+}
+
+.authority-callout,
+.gate-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #efe7d6;
+}
+
+.authority-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.authority-legend li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.handoff-chain {
+  list-style: none;
+  padding: 0;
+}
+
+.handoff-chain li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
 .timeline {
   list-style: none;
   padding: 0;

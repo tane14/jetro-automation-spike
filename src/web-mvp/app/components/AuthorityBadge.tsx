@@ -14,10 +14,11 @@ export function AuthorityBadge({
       className={`authority-badge rank-${labeled.rank}`}
       data-authority-kind={labeled.kind}
       data-authority-rank={labeled.rank}
+      data-authority-display={labeled.displayRank}
       data-testid={testId}
     >
       <strong>{labeled.label}</strong>
-      <span>{labeled.rank}</span>
+      <span>{labeled.displayRank}</span>
     </span>
   );
 }

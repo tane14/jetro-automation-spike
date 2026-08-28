@@ -1,9 +1,17 @@
 export type AuthorityKind =
   | "github_human_approval"
   | "claude_review"
-  | "markdown_evidence";
+  | "markdown_evidence"
+  | "evidence_reference"
+  | "human_approval_gate"
+  | "contract_record";
 
-export type AuthorityRank = "authoritative" | "advisory" | "non-authoritative";
+export type AuthorityRank =
+  | "authoritative"
+  | "advisory"
+  | "non-authoritative"
+  | "reference-only"
+  | "live-verification-required";
 
 export type TaskState =
   | "draft"
@@ -13,7 +21,20 @@ export type TaskState =
   | "awaiting_approval"
   | "approved"
   | "blocked"
-  | "done";
+  | "done"
+  | "PLANNED"
+  | "READY"
+  | "AUTHORIZED"
+  | "IN_PROGRESS"
+  | "REVIEW_READY"
+  | "REVIEWED"
+  | "CHANGES_REQUESTED"
+  | "APPROVED"
+  | "MERGE_READY"
+  | "MERGED"
+  | "BLOCKED"
+  | "FAILED"
+  | "CANCELLED";
 
 export type ApprovalStatus =
   | "not_requested"
@@ -40,18 +61,20 @@ export interface Agent {
   id: string;
   name: string;
   kind: AgentKind;
+  role?: string;
 }
 
 export interface Task {
   id: string;
   missionId: string;
   objective: string;
-  state: TaskState;
+  state: TaskState | string;
   assignedAgentId: string | null;
   prNumber: number | null;
   prUrl: string | null;
   headSha: string | null;
-  approvalStatus: ApprovalStatus;
+  approvalStatus: ApprovalStatus | string;
+  chainConsistency?: "valid" | "invalid" | "inconsistent";
 }
 
 export interface Execution {
@@ -127,10 +150,65 @@ export interface TaskDetailProjection {
   policyDecisions: PolicyDecision[];
   executions: Execution[];
   timeline: TimelineEntry[];
+  contractView?: ContractTaskView;
+}
+
+export interface ContractHandoffStep {
+  key: string;
+  title: string;
+  rank: AuthorityRank;
+  rankDisplay: string;
+  summary: string;
+  present: boolean;
+}
+
+export interface ContractTaskView {
+  id: string;
+  scenario: string;
+  taskId: string;
+  missionId: string;
+  missionTitle: string;
+  objective: string;
+  assignedAgent: Agent | null;
+  lifecycleState: string;
+  riskTier: string | null;
+  contractId: string;
+  schemaVersion: string;
+  contractHash: string;
+  executionStatus: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  headSha: string | null;
+  evidenceRefs: Array<{
+    evidence_id: string;
+    kind: string;
+    path: string;
+    authority_rank: string;
+    input_role: string;
+  }>;
+  reviewStatus: string | null;
+  humanApprovalStatus: string;
+  chainConsistency: "valid" | "invalid" | "inconsistent";
+  consistencyErrors: string[];
+  sufficientForAuthority: false;
+  requiresLiveGithubApproval: true;
+  approvalStatus: string;
+  handoffChain: ContractHandoffStep[];
+  reviewKind: string;
+  evidenceKind: string;
+  gateKind: string;
+  markdownKind: string;
+  policyCheck: {
+    policyVersion: string;
+    checkName: string;
+    conclusion: string;
+    inputRole: string;
+  } | null;
 }
 
 export interface AuthorityLabel {
   kind: AuthorityKind;
   label: string;
   rank: AuthorityRank;
+  displayRank?: string;
 }

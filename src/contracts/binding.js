@@ -3,11 +3,12 @@
 /**
  * Deterministic contract hash / binding for Control Plane contracts v0.5.
  * Canonical JSON is key-sorted, whitespace-free UTF-8. contract_hash is
- * excluded from the digest so the field can store the binding.
+ * SHA-256 of those bytes (isomorphic digest; bit-identical to node:crypto).
+ * The field is excluded from the digest so it can store the binding.
  * Not an authority source.
  */
 
-const crypto = require("node:crypto");
+const { sha256Hex } = require("./sha256");
 
 function canonicalJson(value) {
   if (value === null) return "null";
@@ -44,7 +45,7 @@ function computeContractHash(doc) {
     throw new Error("contract hash requires an object document");
   }
   const canonical = canonicalJson(cloneWithoutHash(doc));
-  return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  return sha256Hex(canonical);
 }
 
 function stampContractHash(doc) {
