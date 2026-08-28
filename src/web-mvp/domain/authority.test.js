@@ -60,4 +60,21 @@ describe("authority labeling", () => {
     assert.notEqual(claude.rank, github.rank);
     assert.notEqual(markdown.rank, github.rank);
   });
+
+  it("labels evidence references as reference-only", () => {
+    const kind = authorityForEvidence({ input_role: "reference_only" });
+    const labeled = labelAuthority(kind);
+    assert.equal(kind, "evidence_reference");
+    assert.equal(labeled.rank, "reference-only");
+    assert.equal(labeled.displayRank, "REFERENCE ONLY");
+    assert.equal(isAuthoritative(kind), false);
+  });
+
+  it("labels human approval gate as live verification required, not authoritative", () => {
+    const labeled = labelAuthority("human_approval_gate");
+    assert.equal(labeled.rank, "live-verification-required");
+    assert.equal(labeled.displayRank, "LIVE VERIFICATION REQUIRED");
+    assert.equal(isAuthoritative("human_approval_gate"), false);
+    assert.notEqual(labeled.rank, "authoritative");
+  });
 });

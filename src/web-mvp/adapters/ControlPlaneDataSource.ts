@@ -9,6 +9,9 @@ import type {
  * Read-only control-plane data access.
  * GitHub remains the system of record. Implementations MUST NOT write,
  * approve, merge, dispatch agents, or mutate repository policy.
+ *
+ * v0.6: getTaskDetail is projected from Contracts v0.5 via the contract
+ * adapter. valid:true is never treated as human approval.
  */
 export interface ControlPlaneDataSource {
   listMissions(): Promise<Mission[]>;

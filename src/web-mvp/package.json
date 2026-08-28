@@ -1,13 +1,13 @@
 {
   "name": "jetro-web-mvp",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --test domain/authority.test.js domain/timeline.test.js domain/projections.test.js domain/task-state.test.js && vitest run"
+    "test": "node --test domain/authority.test.js domain/timeline.test.js domain/projections.test.js domain/task-state.test.js adapter/contractAdapter.test.js && vitest run"
   },
   "dependencies": {
     "react": "^18.3.1",
