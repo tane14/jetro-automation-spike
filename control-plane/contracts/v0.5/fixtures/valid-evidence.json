@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "evidence_reference",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "evidence_id": "EVD-20260828-001",
+  "kind": "markdown",
+  "path": "control-plane/evidence/CONTRACTS_V05.md",
+  "summary": "Contracts v0.5 implementation evidence. Not authority.",
+  "authority_rank": "non-authoritative",
+  "input_role": "reference_only",
+  "authority_claim": "none"
+}

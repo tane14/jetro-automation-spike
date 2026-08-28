@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "task_contract",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "execution_id": "EXEC-20260828-001",
+  "state": "IN_PROGRESS",
+  "base_sha": "eec96d44238d7561f04b86f3195bdac9608284eb",
+  "scope_boundaries": {
+    "allowed_path_globs": [
+      ".github/*",
+      "control-plane/*",
+      "src/*",
+      "README.md",
+      ".gitignore"
+    ],
+    "denied_targets": [
+      "vps",
+      "production",
+      "jetro",
+      "ibe",
+      "database",
+      "scheduler",
+      "automatic_agent",
+      "http_api",
+      "github_integration_runtime",
+      "merge"
+    ]
+  },
+  "acceptance_criteria": [
+    "Versioned JSON schemas exist under control-plane/contracts/v0.5/",
+    "Valid fixtures pass schema validation and invalid fixtures fail",
+    "Task envelope authority_claim remains none"
+  ],
+  "assigned_to": {
+    "kind": "agent",
+    "identity": "cursor",
+    "role": "executor"
+  },
+  "source_role": "orchestrator",
+  "target_role": "executor",
+  "policy_refs": [
+    {
+      "policy_version": "approval-provenance-v0.4",
+      "check_name": "approval-provenance"
+    }
+  ],
+  "evidence_refs": [
+    {
+      "evidence_id": "EVD-20260828-001",
+      "kind": "markdown",
+      "path": "control-plane/evidence/CONTRACTS_V05.md",
+      "authority_rank": "non-authoritative",
+      "input_role": "reference_only"
+    }
+  ],
+  "authority_claim": "none",
+  "lease_token": "opaque-lease-token-01",
+  "leased_at": "2026-08-28T18:00:00Z",
+  "lease_ttl_seconds": 3600,
+  "heartbeat_at": "2026-08-28T18:10:00Z",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d"
+}

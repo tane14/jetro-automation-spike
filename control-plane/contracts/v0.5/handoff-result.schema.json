@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/handoff-result.schema.json",
+  "title": "JETRO Control Plane Execution Handoff v0.5",
+  "description": "Executor-to-reviewer handoff for one execution. source_role and target_role are required. self_reported_summary is informational only. The executor cannot transform this handoff into human authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "execution_id",
+    "outcome",
+    "base_sha",
+    "source_role",
+    "target_role",
+    "self_reported_summary",
+    "summary_role",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "execution_handoff"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash",
+      "description": "Copied Task Contract binding. Not a new authority source."
+    },
+    "execution_id": {
+      "$ref": "#/$defs/execution_id"
+    },
+    "outcome": {
+      "$ref": "#/$defs/execution_outcome"
+    },
+    "base_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "pr_number": {
+      "$ref": "#/$defs/pr_number"
+    },
+    "head_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "source_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "target_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "self_reported_summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Informational only. Must not be treated as review, approval, or authority."
+    },
+    "summary_role": {
+      "const": "informational_only"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_ref"
+      }
+    },
+    "policy_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy_ref"
+      }
+    },
+    "authority_claim": {
+      "const": "none"
+    }
+  },
+  "if": {
+    "properties": {
+      "outcome": {
+        "const": "SUCCESS"
+      }
+    },
+    "required": ["outcome"]
+  },
+  "then": {
+    "required": ["pr_number", "head_sha"]
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^EXEC-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "handoff_role": {
+      "type": "string",
+      "enum": ["orchestrator", "executor", "reviewer", "human_authority"]
+    },
+    "execution_outcome": {
+      "type": "string",
+      "enum": ["SUCCESS", "FAILED", "BLOCKED", "TIMED_OUT"]
+    },
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "check_name"],
+      "properties": {
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "check_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "kind", "path", "authority_rank", "input_role"],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^EVD-[0-9]{8}-[0-9]{3}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["markdown", "ci_log", "attestation", "artifact"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "authority_rank": {
+          "const": "non-authoritative"
+        },
+        "input_role": {
+          "const": "reference_only"
+        }
+      }
+    }
+  }
+}

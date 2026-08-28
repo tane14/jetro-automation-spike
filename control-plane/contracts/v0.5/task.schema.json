@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/task.schema.json",
+  "title": "JETRO Control Plane Task Contract v0.5",
+  "description": "Stable-identity Task Contract issued by the orchestrator to the executor. contract_hash is a deterministic canonical SHA-256 binding. This document does not grant GitHub approval, merge right, or lease authority. AUTHORIZED is a recorded state, not proof of GitHub approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "state",
+    "base_sha",
+    "scope_boundaries",
+    "acceptance_criteria",
+    "assigned_to",
+    "source_role",
+    "target_role",
+    "policy_refs",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "task_contract"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id",
+      "description": "Stable task identity. Format TASK-YYYYMMDD-NNN."
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash",
+      "description": "SHA-256 of canonical JSON with contract_hash excluded. Binding, not authority."
+    },
+    "execution_id": {
+      "$ref": "#/$defs/execution_id",
+      "description": "Current or last execution. Retry MUST allocate a new execution_id."
+    },
+    "state": {
+      "$ref": "#/$defs/task_state"
+    },
+    "base_sha": {
+      "$ref": "#/$defs/git_sha",
+      "description": "Exact git commit the task is authorized to start from. Required. Absence is invalid."
+    },
+    "scope_boundaries": {
+      "$ref": "#/$defs/scope_boundaries"
+    },
+    "acceptance_criteria": {
+      "$ref": "#/$defs/acceptance_criteria"
+    },
+    "assigned_to": {
+      "$ref": "#/$defs/assigned_to"
+    },
+    "source_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "target_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "policy_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/policy_ref"
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_ref"
+      },
+      "description": "Referencable evidence. Never authoritative input."
+    },
+    "authority_claim": {
+      "const": "none",
+      "description": "The Task Contract never grants authorization, merge, or GitHub approval."
+    },
+    "lease_token": {
+      "$ref": "#/$defs/lease_token"
+    },
+    "leased_at": {
+      "$ref": "#/$defs/date_time"
+    },
+    "lease_ttl_seconds": {
+      "$ref": "#/$defs/lease_ttl_seconds"
+    },
+    "heartbeat_at": {
+      "$ref": "#/$defs/date_time"
+    }
+  },
+  "if": {
+    "required": ["lease_token"]
+  },
+  "then": {
+    "required": ["leased_at", "lease_ttl_seconds"],
+    "description": "A task may have only one active lease. lease_token is opaque and is never authority."
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^EXEC-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "date_time": {
+      "type": "string",
+      "minLength": 1,
+      "format": "date-time"
+    },
+    "lease_token": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Opaque lease identifier. Never interpret as authorization, approval, or merge right."
+    },
+    "lease_ttl_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "handoff_role": {
+      "type": "string",
+      "enum": ["orchestrator", "executor", "reviewer", "human_authority"]
+    },
+    "task_state": {
+      "type": "string",
+      "enum": [
+        "PLANNED",
+        "READY",
+        "AUTHORIZED",
+        "IN_PROGRESS",
+        "REVIEW_READY",
+        "REVIEWED",
+        "CHANGES_REQUESTED",
+        "APPROVED",
+        "MERGE_READY",
+        "MERGED",
+        "BLOCKED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "description": "AUTHORIZED/APPROVED/MERGE_READY/MERGED are recorded lifecycle states. They are not by themselves GitHub approval or merge authority."
+    },
+    "assigned_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "role"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["executor", "reviewer", "architect", "operator"]
+        }
+      }
+    },
+    "scope_boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_path_globs", "denied_targets"],
+      "properties": {
+        "allowed_path_globs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "denied_targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "vps",
+              "production",
+              "jetro",
+              "ibe",
+              "database",
+              "scheduler",
+              "automatic_agent",
+              "http_api",
+              "github_integration_runtime",
+              "merge"
+            ]
+          }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "check_name"],
+      "properties": {
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "check_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "description": "Reference to an existing policy/check. Not a second approval path."
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "kind", "path", "authority_rank", "input_role"],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^EVD-[0-9]{8}-[0-9]{3}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["markdown", "ci_log", "attestation", "artifact"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "authority_rank": {
+          "const": "non-authoritative"
+        },
+        "input_role": {
+          "const": "reference_only"
+        }
+      }
+    }
+  }
+}

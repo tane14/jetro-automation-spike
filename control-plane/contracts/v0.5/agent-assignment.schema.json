@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/agent-assignment.schema.json",
+  "title": "JETRO Control Plane Agent Assignment v0.5",
+  "description": "Records who is assigned to execute or review a task. Assignment is not GitHub approval and does not grant lease, merge, or authorization authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "assigned_to",
+    "assigned_at",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "assigned_to": {
+      "$ref": "#/$defs/assigned_to"
+    },
+    "assigned_at": {
+      "$ref": "#/$defs/date_time"
+    },
+    "authority_claim": {
+      "const": "none",
+      "description": "assigned_to records a role. It is not proof of GitHub approval."
+    }
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "date_time": {
+      "type": "string",
+      "minLength": 1,
+      "format": "date-time"
+    },
+    "assigned_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "role"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["executor", "reviewer", "architect", "operator"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/review.schema.json",
+  "title": "JETRO Control Plane Review Handoff v0.5",
+  "description": "Reviewer-to-human_authority handoff. Claude/advisory verdict is never GitHub approval. Published verdicts require reviewed_head_sha. The executor cannot self-approve. GitHub PR review APPROVED from an allowed human remains the approval authority (approval provenance v0.4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "review_id",
+    "state",
+    "verdict_kind",
+    "source_role",
+    "target_role",
+    "authority_rank",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "review_handoff"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash"
+    },
+    "execution_id": {
+      "$ref": "#/$defs/execution_id"
+    },
+    "review_id": {
+      "$ref": "#/$defs/review_id"
+    },
+    "state": {
+      "$ref": "#/$defs/review_state"
+    },
+    "verdict_kind": {
+      "type": "string",
+      "enum": ["claude_advisory", "github_approval_record"],
+      "description": "claude_advisory is never GitHub approval. github_approval_record is a derived record of a GitHub PR review claim, not a substitute for the GitHub review itself."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "PASS_WITH_QUALIFICATIONS", "FAIL", "CHANGES_REQUESTED", "APPROVED"]
+    },
+    "reviewed_head_sha": {
+      "$ref": "#/$defs/git_sha",
+      "description": "Required when state is PUBLISHED. The SHA the verdict actually covers."
+    },
+    "pr_number": {
+      "$ref": "#/$defs/pr_number"
+    },
+    "source_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "target_role": {
+      "$ref": "#/$defs/handoff_role"
+    },
+    "authority_rank": {
+      "type": "string",
+      "enum": ["advisory", "derived_record"],
+      "description": "Claude is advisory. A github_approval_record is a derived record, not live authority."
+    },
+    "reviewer": {
+      "$ref": "#/$defs/assigned_to"
+    },
+    "github_approver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "source"],
+      "properties": {
+        "kind": {
+          "const": "human"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "source": {
+          "const": "github_pr_review",
+          "description": "Authority remains a real GitHub PR review with state APPROVED from an allowed human. This object is a record, not the authority source."
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_ref"
+      }
+    },
+    "authority_claim": {
+      "const": "none",
+      "description": "This document does not grant approval. Claude verdict is not GitHub approval. Markdown records are not the authority source."
+    }
+  },
+  "if": {
+    "properties": {
+      "state": {
+        "const": "PUBLISHED"
+      }
+    },
+    "required": ["state"]
+  },
+  "then": {
+    "required": ["reviewed_head_sha", "verdict"]
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^EXEC-[0-9]{8}-[0-9]{3}$"
+    },
+    "review_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^REVIEW-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "handoff_role": {
+      "type": "string",
+      "enum": ["orchestrator", "executor", "reviewer", "human_authority"]
+    },
+    "review_state": {
+      "type": "string",
+      "enum": ["REQUESTED", "IN_PROGRESS", "PUBLISHED"]
+    },
+    "assigned_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "role"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["executor", "reviewer", "architect", "operator"]
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "kind", "path", "authority_rank", "input_role"],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^EVD-[0-9]{8}-[0-9]{3}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["markdown", "ci_log", "attestation", "artifact"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "authority_rank": {
+          "const": "non-authoritative"
+        },
+        "input_role": {
+          "const": "reference_only"
+        }
+      }
+    }
+  }
+}

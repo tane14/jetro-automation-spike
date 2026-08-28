@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/mission.schema.json",
+  "title": "JETRO Control Plane Mission v0.5",
+  "description": "Mission envelope. Records planning identity and scope. Does not grant GitHub approval, merge authority, or lease authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "title",
+    "state",
+    "base_sha",
+    "scope_boundaries",
+    "acceptance_criteria",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "$ref": "#/$defs/mission_state"
+    },
+    "base_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "scope_boundaries": {
+      "$ref": "#/$defs/scope_boundaries"
+    },
+    "acceptance_criteria": {
+      "$ref": "#/$defs/acceptance_criteria"
+    },
+    "task_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task_id"
+      }
+    },
+    "authority_claim": {
+      "const": "none",
+      "description": "A mission record is evidence of intent, not authority."
+    }
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$",
+      "description": "Mission identifier. Correlated from child artifacts via mission_id."
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "mission_state": {
+      "type": "string",
+      "enum": ["PLANNED", "READY", "IN_PROGRESS", "COMPLETED", "CANCELLED"]
+    },
+    "scope_boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_path_globs", "denied_targets"],
+      "properties": {
+        "allowed_path_globs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "denied_targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "vps",
+              "production",
+              "jetro",
+              "ibe",
+              "database",
+              "scheduler",
+              "automatic_agent",
+              "http_api",
+              "github_integration_runtime",
+              "merge"
+            ]
+          }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
