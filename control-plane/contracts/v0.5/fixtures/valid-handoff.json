@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "execution_handoff",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "execution_id": "EXEC-20260828-001",
+  "outcome": "SUCCESS",
+  "base_sha": "eec96d44238d7561f04b86f3195bdac9608284eb",
+  "pr_number": 21,
+  "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "files_changed": [
+    "control-plane/contracts/v0.5/task.schema.json",
+    "src/contracts/json-schema-lite.js"
+  ],
+  "source_role": "executor",
+  "target_role": "reviewer",
+  "self_reported_summary": "Implemented contracts v0.5 schemas and tests. This summary is informational only.",
+  "summary_role": "informational_only",
+  "authority_claim": "none"
+}

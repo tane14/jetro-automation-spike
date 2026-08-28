@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/evidence-reference.schema.json",
+  "title": "JETRO Control Plane Evidence Reference v0.5",
+  "description": "Referencable evidence pointer. Evidence is audit material only. It is never authoritative input and never GitHub approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "evidence_id",
+    "kind",
+    "path",
+    "authority_rank",
+    "input_role",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "evidence_reference"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash"
+    },
+    "evidence_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^EVD-[0-9]{8}-[0-9]{3}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["markdown", "ci_log", "attestation", "artifact"]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "digest_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authority_rank": {
+      "const": "non-authoritative"
+    },
+    "input_role": {
+      "const": "reference_only"
+    },
+    "authority_claim": {
+      "const": "none"
+    }
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

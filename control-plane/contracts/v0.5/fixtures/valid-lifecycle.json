@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "lifecycle_transition",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "machine": "task",
+  "from_state": "IN_PROGRESS",
+  "to_state": "REVIEW_READY",
+  "reason": "Executor submitted handoff",
+  "authority_claim": "none"
+}

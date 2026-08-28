@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "review_handoff",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "execution_id": "EXEC-20260828-001",
+  "review_id": "REVIEW-20260828-001",
+  "state": "PUBLISHED",
+  "verdict_kind": "claude_advisory",
+  "verdict": "PASS",
+  "pr_number": 21,
+  "source_role": "reviewer",
+  "target_role": "human_authority",
+  "authority_rank": "advisory",
+  "reviewer": {
+    "kind": "agent",
+    "identity": "claude",
+    "role": "reviewer"
+  },
+  "authority_claim": "none"
+}

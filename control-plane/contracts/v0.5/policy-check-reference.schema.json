@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/policy-check-reference.schema.json",
+  "title": "JETRO Control Plane Policy/Check Reference v0.5",
+  "description": "Reference to an existing policy or CI check (for example approval-provenance v0.4). A recorded conclusion is evidence of evaluation, not a substitute for GitHub human approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "policy_version",
+    "check_name",
+    "input_role",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "policy_check_reference"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash"
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "check_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conclusion": {
+      "type": "string",
+      "enum": ["pass", "fail", "indeterminate", "neutral"]
+    },
+    "input_role": {
+      "const": "reference_only"
+    },
+    "authority_claim": {
+      "const": "none"
+    }
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

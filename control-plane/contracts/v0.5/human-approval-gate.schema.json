@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/human-approval-gate.schema.json",
+  "title": "JETRO Control Plane Human Approval Gate v0.5",
+  "description": "Derived record that an authoritative GitHub PR review APPROVED exists. This JSON is not the approval. Live verification remains approval-provenance v0.4. Markdown cannot satisfy this gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document_kind",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "contract_hash",
+    "pr_number",
+    "reviewed_head_sha",
+    "github_review_state",
+    "reviewer_identity",
+    "authority_source",
+    "policy_ref",
+    "live_verification_required",
+    "substitutes_for_github_review",
+    "record_role",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "document_kind": {
+      "const": "human_approval_gate"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "contract_hash": {
+      "$ref": "#/$defs/contract_hash"
+    },
+    "pr_number": {
+      "$ref": "#/$defs/pr_number"
+    },
+    "reviewed_head_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "github_review_state": {
+      "const": "APPROVED"
+    },
+    "reviewer_identity": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "authority_source": {
+      "const": "github_pr_review",
+      "description": "The only valid authority source. Markdown, handoff JSON, and Claude review are invalid."
+    },
+    "policy_ref": {
+      "$ref": "#/$defs/policy_ref"
+    },
+    "live_verification_required": {
+      "const": true
+    },
+    "substitutes_for_github_review": {
+      "const": false
+    },
+    "record_role": {
+      "const": "derived_record_not_authority"
+    },
+    "authority_claim": {
+      "const": "none"
+    }
+  },
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "check_name"],
+      "properties": {
+        "policy_version": {
+          "const": "approval-provenance-v0.4"
+        },
+        "check_name": {
+          "const": "approval-provenance"
+        }
+      }
+    }
+  }
+}

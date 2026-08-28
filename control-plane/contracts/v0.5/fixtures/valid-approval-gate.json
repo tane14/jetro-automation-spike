@@ -1,0 +1,21 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "human_approval_gate",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "pr_number": 21,
+  "reviewed_head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "github_review_state": "APPROVED",
+  "reviewer_identity": "machubsystem-sketch",
+  "authority_source": "github_pr_review",
+  "policy_ref": {
+    "policy_version": "approval-provenance-v0.4",
+    "check_name": "approval-provenance"
+  },
+  "live_verification_required": true,
+  "substitutes_for_github_review": false,
+  "record_role": "derived_record_not_authority",
+  "authority_claim": "none"
+}

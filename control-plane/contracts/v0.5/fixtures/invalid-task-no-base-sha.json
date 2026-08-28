@@ -1,0 +1,43 @@
+{
+  "schema_version": "0.5",
+  "document_kind": "task_contract",
+  "mission_id": "MISSION-20260828-001",
+  "task_id": "TASK-20260828-001",
+  "contract_id": "CONTRACT-20260828-001",
+  "contract_hash": "63f54a5419ce7a89759b41ec7c6f0c6a1774b3c0ceb1debce510a127a935390d",
+  "state": "READY",
+  "scope_boundaries": {
+    "allowed_path_globs": [
+      ".github/*",
+      "control-plane/*",
+      "src/*",
+      "README.md",
+      ".gitignore"
+    ],
+    "denied_targets": [
+      "vps",
+      "production",
+      "jetro",
+      "ibe",
+      "database",
+      "merge"
+    ]
+  },
+  "acceptance_criteria": [
+    "This fixture must fail because base_sha is missing"
+  ],
+  "assigned_to": {
+    "kind": "agent",
+    "identity": "cursor",
+    "role": "executor"
+  },
+  "source_role": "orchestrator",
+  "target_role": "executor",
+  "policy_refs": [
+    {
+      "policy_version": "approval-provenance-v0.4",
+      "check_name": "approval-provenance"
+    }
+  ],
+  "authority_claim": "none"
+}

@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jetro.local/control-plane/contracts/v0.5/execution.schema.json",
+  "title": "JETRO Control Plane Execution v0.5",
+  "description": "One lease/attempt of a task. Retry MUST create a new execution_id. lease_token is opaque and is never authority. A task may have only one active lease (LEASED or RUNNING).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "task_id",
+    "contract_id",
+    "execution_id",
+    "state",
+    "assigned_to",
+    "base_sha",
+    "authority_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.5"
+    },
+    "mission_id": {
+      "$ref": "#/$defs/mission_id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "contract_id": {
+      "$ref": "#/$defs/contract_id"
+    },
+    "execution_id": {
+      "$ref": "#/$defs/execution_id"
+    },
+    "state": {
+      "$ref": "#/$defs/execution_state"
+    },
+    "assigned_to": {
+      "$ref": "#/$defs/assigned_to"
+    },
+    "base_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "lease_token": {
+      "$ref": "#/$defs/lease_token"
+    },
+    "leased_at": {
+      "$ref": "#/$defs/date_time"
+    },
+    "lease_ttl_seconds": {
+      "$ref": "#/$defs/lease_ttl_seconds"
+    },
+    "heartbeat_at": {
+      "$ref": "#/$defs/date_time"
+    },
+    "outcome": {
+      "$ref": "#/$defs/execution_outcome"
+    },
+    "pr_number": {
+      "$ref": "#/$defs/pr_number"
+    },
+    "head_sha": {
+      "$ref": "#/$defs/git_sha"
+    },
+    "authority_claim": {
+      "const": "none",
+      "description": "Holding a lease_token or submitting an outcome is not GitHub approval and not merge authority."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": ["LEASED", "RUNNING"]
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["lease_token", "leased_at", "lease_ttl_seconds"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "RESULT_SUBMITTED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["outcome", "heartbeat_at"]
+      }
+    }
+  ],
+  "$defs": {
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^MISSION-[0-9]{8}-[0-9]{3}$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^TASK-[0-9]{8}-[0-9]{3}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^CONTRACT-[0-9]{8}-[0-9]{3}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^EXEC-[0-9]{8}-[0-9]{3}$"
+    },
+    "git_sha": {
+      "type": "string",
+      "minLength": 40,
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "date_time": {
+      "type": "string",
+      "minLength": 1,
+      "format": "date-time"
+    },
+    "lease_token": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Opaque string. Never interpret as authority."
+    },
+    "lease_ttl_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "execution_state": {
+      "type": "string",
+      "enum": [
+        "LEASED",
+        "RUNNING",
+        "RESULT_SUBMITTED",
+        "TIMED_OUT",
+        "FAILED",
+        "BLOCKED"
+      ]
+    },
+    "execution_outcome": {
+      "type": "string",
+      "enum": ["SUCCESS", "FAILED", "BLOCKED", "TIMED_OUT"]
+    },
+    "assigned_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "role"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["executor", "reviewer", "architect", "operator"]
+        }
+      }
+    }
+  }
+}
