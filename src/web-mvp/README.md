@@ -20,6 +20,8 @@ v0.7 adds a Node `MissionTaskRuntime` + `JsonFileMissionTaskStore`. The browser 
 
 Local JSON under `control-plane/runtime-state/` (gitignored) is persistence, not GitHub approval.
 
+v0.8 `TaskDispatchRuntime` records assignment + LEASED execution and a JSON dispatch package. READY is a dispatched record, not human authorization. The UI has no execute/approve/merge controls. Assignment is labeled as an operational record, not approval.
+
 ## Run locally
 
 From this directory:

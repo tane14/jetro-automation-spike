@@ -16,7 +16,7 @@ export const TASK_STATE_LABELS = {
   blocked: "Blocked",
   done: "Done",
   PLANNED: "Planned",
-  READY: "Ready",
+  READY: "Ready (dispatched record, not human authorized)",
   AUTHORIZED: "Authorized (recorded)",
   IN_PROGRESS: "In progress",
   REVIEW_READY: "Review ready",

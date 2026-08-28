@@ -38,6 +38,42 @@ class MissionTaskStore {
   async listTasksByMission(_missionId) {
     throw new Error("MissionTaskStore.listTasksByMission is not implemented");
   }
+
+  async putAssignment(_doc) {
+    throw new Error("MissionTaskStore.putAssignment is not implemented");
+  }
+
+  async getAssignment(_taskId) {
+    throw new Error("MissionTaskStore.getAssignment is not implemented");
+  }
+
+  async putExecution(_doc) {
+    throw new Error("MissionTaskStore.putExecution is not implemented");
+  }
+
+  async getExecution(_executionId) {
+    throw new Error("MissionTaskStore.getExecution is not implemented");
+  }
+
+  async listExecutions() {
+    throw new Error("MissionTaskStore.listExecutions is not implemented");
+  }
+
+  async listExecutionsByTask(_taskId) {
+    throw new Error("MissionTaskStore.listExecutionsByTask is not implemented");
+  }
+
+  async putTransition(_doc, _executionId) {
+    throw new Error("MissionTaskStore.putTransition is not implemented");
+  }
+
+  async putPackage(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putPackage is not implemented");
+  }
+
+  async getPackage(_executionId) {
+    throw new Error("MissionTaskStore.getPackage is not implemented");
+  }
 }
 
 function assertStore(store) {
@@ -52,6 +88,15 @@ function assertStore(store) {
     "getTask",
     "listTasks",
     "listTasksByMission",
+    "putAssignment",
+    "getAssignment",
+    "putExecution",
+    "getExecution",
+    "listExecutions",
+    "listExecutionsByTask",
+    "putTransition",
+    "putPackage",
+    "getPackage",
   ];
   for (const name of methods) {
     if (typeof store[name] !== "function") {
