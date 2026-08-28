@@ -141,3 +141,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local Mission/Task runtime state (v0.7). JSON documents only. Not authority.
+# Never use control-plane/tasks/*.md or control-plane/approvals/*.md as storage.
+control-plane/runtime-state/
+

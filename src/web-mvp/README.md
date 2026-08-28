@@ -16,6 +16,10 @@ React screens do not import JSON Schema. `validateDocument()` / `valid: true` is
 
 The adapter verifies Task Contract `contract_hash` as SHA-256 of canonical JSON (same `src/contracts/binding.js` rules as Node). A copied child hash is not enough; a stolen or placeholder digest fails closed. Hash verification is not human approval.
 
+v0.7 adds a Node `MissionTaskRuntime` + `JsonFileMissionTaskStore`. The browser app still defaults to `MockControlPlaneDataSource`. A Node host may inject `StoredControlPlaneDataSource` through the existing `App` `dataSource` prop. The UI remains observational: no create, approve, execute, or merge controls.
+
+Local JSON under `control-plane/runtime-state/` (gitignored) is persistence, not GitHub approval.
+
 ## Run locally
 
 From this directory:
