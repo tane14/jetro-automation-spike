@@ -1,13 +1,19 @@
 /**
  * Contract adapter: ControlPlaneDataSource → Contracts v0.5 → Authority Boundary.
  *
- * Uses json-schema-lite, correlation, and authority modules from src/contracts/.
- * React components must not import schemas. valid:true is never authorization.
+ * Uses json-schema-lite, correlation, authority, and binding (SHA-256
+ * contract_hash verification) from src/contracts/. React components must not
+ * import schemas. valid:true is never authorization. A matching copied hash
+ * is not enough: the Task Contract digest must verify.
  */
 
 import { validate } from "../../contracts/json-schema-lite.js";
 import { validateCorrelation } from "../../contracts/correlation.js";
 import { authorityErrors, roleErrors } from "../../contracts/authority.js";
+import {
+  verifyContractBinding,
+  verifyCopiedBinding,
+} from "../../contracts/binding.js";
 import { projectContractView, NOT_AUTHORITY } from "./projectContractView.js";
 
 import taskSchema from "../../../control-plane/contracts/v0.5/task.schema.json" with { type: "json" };
@@ -57,6 +63,10 @@ const validateCorrelationFn =
   unwrap(validateCorrelation, "validateCorrelation") || validateCorrelation;
 const authorityErrorsFn = unwrap(authorityErrors, "authorityErrors") || authorityErrors;
 const roleErrorsFn = unwrap(roleErrors, "roleErrors") || roleErrors;
+const verifyContractBindingFn =
+  unwrap(verifyContractBinding, "verifyContractBinding") || verifyContractBinding;
+const verifyCopiedBindingFn =
+  unwrap(verifyCopiedBinding, "verifyCopiedBinding") || verifyCopiedBinding;
 
 function validateOne(kind, doc) {
   if (doc === undefined || doc === null) {
@@ -70,13 +80,16 @@ function validateOne(kind, doc) {
   const errors = [...(schemaResult.errors || [])];
   errors.push(...authorityErrorsFn(kind, doc));
   errors.push(...roleErrorsFn(kind, doc));
+  if (kind === "task_contract") {
+    const binding = verifyContractBindingFn(doc);
+    errors.push(...(binding.errors || []));
+  }
   return { valid: errors.length === 0, errors, ...NOT_AUTHORITY };
 }
 
 function copiedHashErrors(bundle) {
   const errors = [];
-  const expected = bundle.task && bundle.task.contract_hash;
-  if (!expected) return errors;
+  if (!bundle.task) return errors;
   for (const key of [
     "execution_handoff",
     "review_handoff",
@@ -84,8 +97,9 @@ function copiedHashErrors(bundle) {
     "evidence",
     "policy",
   ]) {
-    if (bundle[key] && bundle[key].contract_hash !== expected) {
-      errors.push(`${key}: child contract_hash does not match task contract binding`);
+    if (bundle[key]) {
+      const copied = verifyCopiedBindingFn(bundle[key], bundle.task);
+      errors.push(...copied.errors.map((err) => `${key}: ${err}`));
     }
   }
   return errors;

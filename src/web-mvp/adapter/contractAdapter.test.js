@@ -206,3 +206,48 @@ describe("lite adapter agrees with full contracts on fail-closed outcomes", () =
     }
   });
 });
+
+describe("adversarial hash test", () => {
+  it("stolen contract_hash after mutation fails closed and never becomes PASS", () => {
+    const entry = JSON.parse(JSON.stringify(getScenario("TASK-20260828-001")));
+    const originalHash = entry.bundle.task.contract_hash;
+    assert.match(originalHash, /^[a-f0-9]{64}$/);
+    assert.notEqual(originalHash, "0000000000000000000000000000000000000000000000000000000000000000");
+    entry.bundle.task.acceptance_criteria = ["adversarial mutation after stamp"];
+    assert.equal(entry.bundle.task.contract_hash, originalHash);
+
+    const view = adaptContractBundle(entry);
+    assert.equal(view.chainConsistency, "invalid");
+    assert.ok(
+      view.consistencyErrors.some((err) =>
+        err.includes("contract_hash does not match canonical digest"),
+      ),
+    );
+    assert.notEqual(view.approvalStatus, "approved");
+    assert.equal(view.sufficientForAuthority, false);
+    assert.equal(view.requiresLiveGithubApproval, true);
+  });
+
+  it("placeholder zero hash is rejected by cryptographic verification", () => {
+    const entry = JSON.parse(JSON.stringify(getScenario("TASK-20260828-001")));
+    const zeros = "0000000000000000000000000000000000000000000000000000000000000000";
+    entry.bundle.task.contract_hash = zeros;
+    for (const key of [
+      "execution_handoff",
+      "review_handoff",
+      "approval_gate",
+      "evidence",
+      "policy",
+    ]) {
+      entry.bundle[key].contract_hash = zeros;
+    }
+    const view = adaptContractBundle(entry);
+    assert.equal(view.chainConsistency, "invalid");
+    assert.ok(
+      view.consistencyErrors.some((err) =>
+        err.includes("contract_hash does not match canonical digest"),
+      ),
+    );
+    assert.notEqual(view.approvalStatus, "approved");
+  });
+});

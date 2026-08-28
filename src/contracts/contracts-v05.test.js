@@ -260,6 +260,18 @@ test("contract/hash binding deterministic", () => {
   assert.equal(binding.valid, false);
 });
 
+test("isomorphic SHA-256 matches node:crypto for canonical contract JSON", () => {
+  const crypto = require("node:crypto");
+  const { sha256Hex } = require("./sha256");
+  const task = boundTask();
+  const copy = clone(task);
+  delete copy.contract_hash;
+  const canonical = canonicalJson(copy);
+  const nodeDigest = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  assert.equal(sha256Hex(canonical), nodeDigest);
+  assert.equal(task.contract_hash, nodeDigest);
+});
+
 test("fail closed for missing or non-object documents", () => {
   assert.equal(validateDocument("task_contract", null).valid, false);
   assert.equal(validateDocument("task_contract", undefined).valid, false);

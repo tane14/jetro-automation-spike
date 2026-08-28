@@ -34,7 +34,7 @@ React components do not import JSON Schema. They render a projected view model.
 - `evidence-reference.schema.json`
 - `policy-check-reference.schema.json`
 - `mission.schema.json`
-- `src/contracts/json-schema-lite.js`, `correlation.js`, `authority.js`
+- `src/contracts/json-schema-lite.js`, `correlation.js`, `authority.js`, `binding.js` (SHA-256 `contract_hash` verification on the adapter path)
 - Full `validateDocument` / `validateHandoffChain` / `validateCorrelation` in Node tests
 
 ## Authority boundary
@@ -50,7 +50,7 @@ React components do not import JSON Schema. They render a projected view model.
 ## Tests
 
 - `node --test src/contracts/contracts-v05.test.js`
-- `node --test src/web-mvp/adapter/contractAdapter.test.js` (required v0.6 scenarios)
+- `node --test src/web-mvp/adapter/contractAdapter.test.js` (required v0.6 scenarios + adversarial hash)
 - `npm test` in `src/web-mvp/` (domain + adapter + vitest UI)
 - Full `src/**/*.test.js` suite
 
@@ -63,8 +63,11 @@ React components do not import JSON Schema. They render a projected view model.
 - E executor/reviewer identity collision: TASK-20260828-005
 - F invalid schema (missing task id): TASK-20260828-006
 
+## Hash verification (v0.6 hardening)
+
+The Web MVP adapter calls `verifyContractBinding` / `verifyCopiedBinding` from `src/contracts/binding.js`. Digest is SHA-256 of canonical JSON, isomorphic with Node (`src/contracts/sha256.js` matches `node:crypto`). Mocks are stamped at catalog load. A mutated Task Contract that keeps a stolen `contract_hash` fails closed and is never rendered as PASS or human approval.
+
 ## Qualifications
 
 - Mocks remain local; there is still no live GitHub data adapter.
 - Risk tier is displayed as "—" because Contracts v0.5 Task Contract has no `risk_tier` field.
-- UI adapter uses schema + correlation + authority modules; cryptographic contract_hash restamp is asserted in Node via the full contracts API.

@@ -14,6 +14,8 @@ Web MVP
 
 React screens do not import JSON Schema. `validateDocument()` / `valid: true` is never authorization. Human approval remains a live GitHub PR review verified by approval-provenance v0.4.
 
+The adapter verifies Task Contract `contract_hash` as SHA-256 of canonical JSON (same `src/contracts/binding.js` rules as Node). A copied child hash is not enough; a stolen or placeholder digest fails closed. Hash verification is not human approval.
+
 ## Run locally
 
 From this directory:

@@ -3,14 +3,27 @@
 /**
  * Raw Contracts v0.5 mock bundles for the read-only Web MVP.
  * Validation and authority labeling happen in the contract adapter.
- * These objects are not authority. Placeholder hashes are internally consistent;
- * Node tests stamp a real binding via contracts v0.5 before asserting.
+ * These objects are not authority. Each bundle is stamped with a real
+ * SHA-256 contract_hash via src/contracts/binding.js (same rules as Node).
  */
+
+import { stampContractHash as stampBinding } from "../../contracts/binding.js";
 
 const HASH = "0000000000000000000000000000000000000000000000000000000000000000";
 const BASE_SHA = "f64b688d9f28e7f159a473f6df961bcc219a65a2";
 const HEAD_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const MISMATCH_SHA = "cccccccccccccccccccccccccccccccccccccccc";
+
+function stampContractHash(doc) {
+  if (stampBinding && typeof stampBinding === "function") return stampBinding(doc);
+  if (stampBinding && stampBinding.stampContractHash) {
+    return stampBinding.stampContractHash(doc);
+  }
+  if (stampBinding && stampBinding.default && stampBinding.default.stampContractHash) {
+    return stampBinding.default.stampContractHash(doc);
+  }
+  throw new Error("stampContractHash unavailable from contracts binding");
+}
 
 const SCOPE = {
   allowed_path_globs: [
@@ -255,6 +268,24 @@ function fullBundle(taskId, objective, tweaks = {}) {
   if (tweaks.approval_gate) Object.assign(bundle.approval_gate, tweaks.approval_gate);
   if (tweaks.execution_handoff) Object.assign(bundle.execution_handoff, tweaks.execution_handoff);
   if (tweaks.deleteTaskId) delete bundle.task.task_id;
+  return bindBundle(bundle);
+}
+
+function bindBundle(bundle) {
+  if (!bundle.task) return bundle;
+  bundle.task = stampContractHash(bundle.task);
+  const hash = bundle.task.contract_hash;
+  for (const key of [
+    "execution_handoff",
+    "review_handoff",
+    "approval_gate",
+    "evidence",
+    "policy",
+  ]) {
+    if (bundle[key] && Object.prototype.hasOwnProperty.call(bundle[key], "contract_hash")) {
+      bundle[key].contract_hash = hash;
+    }
+  }
   return bundle;
 }
 
