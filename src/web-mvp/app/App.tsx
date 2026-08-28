@@ -14,6 +14,12 @@ export interface AppProps {
   dataSource?: ControlPlaneDataSource;
 }
 
+/**
+ * Read-only laboratory UI. Optional `dataSource` lets Node tests / future
+ * hosts inject StoredControlPlaneDataSource. The browser default is the
+ * mock catalog — Vite cannot use the JSON file store (Node fs). This
+ * component does not expose create, approve, execute, or merge actions.
+ */
 export function App({ dataSource }: AppProps) {
   const source = useMemo(
     () => dataSource ?? new MockControlPlaneDataSource(),
