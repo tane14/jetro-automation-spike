@@ -22,6 +22,8 @@ Local JSON under `control-plane/runtime-state/` (gitignored) is persistence, not
 
 v0.8 `TaskDispatchRuntime` records assignment + LEASED execution and a JSON dispatch package. READY is a dispatched record, not human authorization. The UI has no execute/approve/merge controls. Assignment is labeled as an operational record, not approval.
 
+v0.9 `ExecutorExchangeRuntime` exports that package to `exchange/outbox/` and ingests `execution_handoff`. The result is labeled as an operational executor record, not review or approval. The UI remains observational.
+
 ## Run locally
 
 From this directory:

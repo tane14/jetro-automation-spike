@@ -59,6 +59,9 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     this.executionsDir = path.join(this.rootDir, "executions");
     this.transitionsDir = path.join(this.rootDir, "transitions");
     this.packagesDir = path.join(this.rootDir, "packages");
+    this.handoffsDir = path.join(this.rootDir, "handoffs");
+    this.outboxDir = path.join(this.rootDir, "exchange", "outbox");
+    this.inboxDir = path.join(this.rootDir, "exchange", "inbox");
   }
 
   #missionPath(missionId) {
@@ -81,14 +84,35 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     return path.join(this.executionsDir, `${executionId}.json`);
   }
 
-  #transitionPath(executionId) {
-    assertCanonicalId("EXEC", executionId);
-    return path.join(this.transitionsDir, `${executionId}.json`);
-  }
-
   #packagePath(executionId) {
     assertCanonicalId("EXEC", executionId);
     return path.join(this.packagesDir, `${executionId}.json`);
+  }
+
+  #handoffPath(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    return path.join(this.handoffsDir, `${executionId}.json`);
+  }
+
+  #outboxPath(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    return path.join(this.outboxDir, `${executionId}.json`);
+  }
+
+  #inboxPath(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    return path.join(this.inboxDir, `${executionId}.json`);
+  }
+
+  #transitionFile(executionId, suffix) {
+    assertCanonicalId("EXEC", executionId);
+    if (suffix !== undefined && suffix !== null && suffix !== "") {
+      if (typeof suffix !== "string" || !/^[A-Z0-9_-]+$/.test(suffix)) {
+        throw new Error("invalid transition suffix");
+      }
+      return path.join(this.transitionsDir, `${executionId}.${suffix}.json`);
+    }
+    return path.join(this.transitionsDir, `${executionId}.json`);
   }
 
   async #listJsonDocs(dir) {
@@ -194,11 +218,11 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     return executions.filter((item) => item && item.task_id === taskId);
   }
 
-  async putTransition(doc, executionId) {
+  async putTransition(doc, executionId, suffix) {
     if (!doc || typeof doc !== "object") {
       throw new Error("putTransition requires a lifecycle document");
     }
-    writeJsonAtomic(this.#transitionPath(executionId), doc);
+    writeJsonAtomic(this.#transitionFile(executionId, suffix), doc);
     return doc;
   }
 
@@ -212,6 +236,53 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
 
   async getPackage(executionId) {
     return readJsonIfPresent(this.#packagePath(executionId));
+  }
+
+  async putHandoff(executionId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putHandoff requires a handoff document");
+    }
+    writeJsonAtomic(this.#handoffPath(executionId), doc);
+    return doc;
+  }
+
+  async getHandoff(executionId) {
+    return readJsonIfPresent(this.#handoffPath(executionId));
+  }
+
+  async listHandoffs() {
+    return this.#listJsonDocs(this.handoffsDir);
+  }
+
+  async listHandoffsByTask(taskId) {
+    assertCanonicalId("TASK", taskId);
+    const docs = await this.listHandoffs();
+    return docs.filter((item) => item && item.task_id === taskId);
+  }
+
+  async putOutbox(executionId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putOutbox requires a package document");
+    }
+    const filePath = this.#outboxPath(executionId);
+    writeJsonAtomic(filePath, doc);
+    return filePath;
+  }
+
+  async getOutbox(executionId) {
+    return readJsonIfPresent(this.#outboxPath(executionId));
+  }
+
+  async putInbox(executionId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putInbox requires a handoff document");
+    }
+    writeJsonAtomic(this.#inboxPath(executionId), doc);
+    return doc;
+  }
+
+  async getInbox(executionId) {
+    return readJsonIfPresent(this.#inboxPath(executionId));
   }
 }
 
