@@ -151,7 +151,7 @@ export function projectContractView(input) {
         "Agent Assignment",
         "non-authoritative",
         bundle.assignment
-          ? `${bundle.assignment.assigned_to.identity} (${bundle.assignment.assigned_to.role})`
+          ? `${bundle.assignment.assigned_to.identity} (${bundle.assignment.assigned_to.role}) — operational record, not human approval`
           : "missing",
         bundle.assignment,
       ),

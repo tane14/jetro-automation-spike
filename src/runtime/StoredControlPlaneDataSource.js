@@ -26,7 +26,7 @@ async function loadProjection() {
   return projection;
 }
 
-function entryFor(mission, task) {
+function entryFor(mission, task, extras = {}) {
   return {
     id: task.task_id,
     scenario: "runtime-store",
@@ -37,6 +37,8 @@ function entryFor(mission, task) {
     bundle: {
       mission,
       task,
+      ...(extras.assignment ? { assignment: extras.assignment } : {}),
+      ...(extras.execution ? { execution: extras.execution } : {}),
     },
   };
 }
@@ -102,6 +104,21 @@ class StoredControlPlaneDataSource {
     this.store = assertStore(options.store);
   }
 
+  async #bundleExtras(task) {
+    const extras = {};
+    if (typeof this.store.getAssignment === "function") {
+      extras.assignment = await this.store.getAssignment(task.task_id);
+    }
+    if (typeof this.store.listExecutionsByTask === "function") {
+      const executions = await this.store.listExecutionsByTask(task.task_id);
+      extras.execution =
+        executions.find((item) => item && (item.state === "LEASED" || item.state === "RUNNING")) ||
+        executions[executions.length - 1] ||
+        null;
+    }
+    return extras;
+  }
+
   async #views() {
     const { adaptContractBundle } = await loadProjection();
     const [missions, tasks] = await Promise.all([
@@ -109,32 +126,41 @@ class StoredControlPlaneDataSource {
       this.store.listTasks(),
     ]);
     const missionById = new Map(missions.map((doc) => [doc.mission_id, doc]));
-    return tasks.map((task) =>
-      adaptContractBundle(entryFor(missionById.get(task.mission_id) || null, task)),
-    );
+    const views = [];
+    for (const task of tasks) {
+      const extras = await this.#bundleExtras(task);
+      views.push(
+        adaptContractBundle(entryFor(missionById.get(task.mission_id) || null, task, extras)),
+      );
+    }
+    return views;
   }
 
   async listMissions() {
     const { adaptContractBundle, viewToMission } = await loadProjection();
     const missions = await this.store.listMissions();
     const tasks = await this.store.listTasks();
-    return missions.map((mission) => {
+    const projected = [];
+    for (const mission of missions) {
       const taskIds = tasks
         .filter((task) => task.mission_id === mission.mission_id)
         .map((task) => task.task_id);
       const firstTask = tasks.find((task) => task.mission_id === mission.mission_id);
       if (firstTask) {
-        const view = adaptContractBundle(entryFor(mission, firstTask));
-        return viewToMission(view, taskIds);
+        const extras = await this.#bundleExtras(firstTask);
+        const view = adaptContractBundle(entryFor(mission, firstTask, extras));
+        projected.push(viewToMission(view, taskIds));
+      } else {
+        projected.push({
+          id: mission.mission_id,
+          title: mission.title,
+          objective: mission.description || mission.title,
+          state: mission.state,
+          taskIds,
+        });
       }
-      return {
-        id: mission.mission_id,
-        title: mission.title,
-        objective: mission.description || mission.title,
-        state: mission.state,
-        taskIds,
-      };
-    });
+    }
+    return projected;
   }
 
   async getMission(id) {

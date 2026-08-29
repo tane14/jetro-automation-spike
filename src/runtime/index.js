@@ -1,7 +1,8 @@
 "use strict";
 
 /**
- * Public surface for the local Mission/Task runtime v0.7.
+ * Public surface for the local Mission/Task runtime v0.7 and
+ * Task Dispatch runtime v0.8.
  * Not an HTTP API, database, GitHub integration, or authority source.
  */
 
@@ -12,6 +13,7 @@ const {
   RuntimeValidationError,
 } = require("./MissionTaskRuntime");
 const { StoredControlPlaneDataSource } = require("./StoredControlPlaneDataSource");
+const { TaskDispatchRuntime } = require("./TaskDispatchRuntime");
 const { utcDateStamp, nextId, assertCanonicalId } = require("./ids");
 
 module.exports = {
@@ -21,6 +23,7 @@ module.exports = {
   MissionTaskRuntime,
   RuntimeValidationError,
   StoredControlPlaneDataSource,
+  TaskDispatchRuntime,
   utcDateStamp,
   nextId,
   assertCanonicalId,
