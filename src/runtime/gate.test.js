@@ -105,6 +105,31 @@ test("non-human identities cannot ack", async () => {
   assert.equal(await env.gate.getAuthorization(id), null);
 });
 
+test("reviewer/ci/runner/pipeline/service/github-actions cannot ack", async () => {
+  const env = tempEnv();
+  const { dispatched } = await leaseReady(env);
+  const id = dispatched.execution.execution_id;
+  for (const identity of [
+    "reviewer",
+    "Reviewer",
+    "REVIEWER",
+    "ci",
+    "runner",
+    "pipeline",
+    "service",
+    "github-actions",
+  ]) {
+    await expectFail(() =>
+      env.gate.authorizeExecution({ execution_id: id, acknowledged_by: identity }),
+    );
+  }
+  assert.equal(await env.gate.getAuthorization(id), null);
+  assert.equal((await env.store.getTask(dispatched.task.task_id)).state, "READY");
+  assert.equal((await env.store.getExecution(id)).state, "LEASED");
+  const predicate = await env.gate.evaluateStartAuthorization(id);
+  assert.equal(predicate.allowed, false);
+});
+
 test("correlation, lease, state, duplicate, replay → FAIL", async () => {
   const env = tempEnv();
   const first = await leaseReady(env);

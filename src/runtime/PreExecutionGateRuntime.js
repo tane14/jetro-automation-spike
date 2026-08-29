@@ -41,6 +41,12 @@ const DENIED_IDENTITIES = new Set([
   "agent",
   "bot",
   "copilot",
+  "reviewer",
+  "ci",
+  "runner",
+  "pipeline",
+  "service",
+  "github-actions",
 ]);
 
 const NOT_START_AUTH = {

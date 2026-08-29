@@ -37,7 +37,7 @@ TaskDispatchRuntime → Execution LEASED, Task READY
 
 ## Identity policy
 
-`acknowledged_by` must be `{ kind: "human", identity }` (CLI string is wrapped). Denied identities include executor, cursor, claude, gpt, chatgpt, system, automation, and other agent/orchestrator names. This is a **local denylist**, not GitHub identity proof.
+`acknowledged_by` must be `{ kind: "human", identity }` (CLI string is wrapped). ASCII-only identity regex. Denied identities include executor, reviewer, cursor, claude, gpt, chatgpt, system, automation, ci, runner, pipeline, service, github-actions, and other agent/orchestrator names. This is a **local denylist**, not GitHub identity proof. N1 closed: `reviewer` and common automation labels are denied case-insensitively.
 
 ## Persistence order
 
