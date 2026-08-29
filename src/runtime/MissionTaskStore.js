@@ -74,6 +74,38 @@ class MissionTaskStore {
   async getPackage(_executionId) {
     throw new Error("MissionTaskStore.getPackage is not implemented");
   }
+
+  async putHandoff(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putHandoff is not implemented");
+  }
+
+  async getHandoff(_executionId) {
+    throw new Error("MissionTaskStore.getHandoff is not implemented");
+  }
+
+  async listHandoffs() {
+    throw new Error("MissionTaskStore.listHandoffs is not implemented");
+  }
+
+  async listHandoffsByTask(_taskId) {
+    throw new Error("MissionTaskStore.listHandoffsByTask is not implemented");
+  }
+
+  async putOutbox(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putOutbox is not implemented");
+  }
+
+  async getOutbox(_executionId) {
+    throw new Error("MissionTaskStore.getOutbox is not implemented");
+  }
+
+  async putInbox(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putInbox is not implemented");
+  }
+
+  async getInbox(_executionId) {
+    throw new Error("MissionTaskStore.getInbox is not implemented");
+  }
 }
 
 function assertStore(store) {
@@ -97,6 +129,14 @@ function assertStore(store) {
     "putTransition",
     "putPackage",
     "getPackage",
+    "putHandoff",
+    "getHandoff",
+    "listHandoffs",
+    "listHandoffsByTask",
+    "putOutbox",
+    "getOutbox",
+    "putInbox",
+    "getInbox",
   ];
   for (const name of methods) {
     if (typeof store[name] !== "function") {

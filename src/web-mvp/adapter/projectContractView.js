@@ -166,7 +166,9 @@ export function projectContractView(input) {
         "execution_handoff",
         "Execution Handoff",
         "non-authoritative",
-        handoff ? `${handoff.source_role} → ${handoff.target_role} (${handoff.outcome})` : "missing",
+        handoff
+          ? `${handoff.source_role} → ${handoff.target_role} (${handoff.outcome}) — operational executor result, not review or human approval`
+          : "missing",
         handoff,
       ),
       chainStep(

@@ -39,6 +39,7 @@ function entryFor(mission, task, extras = {}) {
       task,
       ...(extras.assignment ? { assignment: extras.assignment } : {}),
       ...(extras.execution ? { execution: extras.execution } : {}),
+      ...(extras.execution_handoff ? { execution_handoff: extras.execution_handoff } : {}),
     },
   };
 }
@@ -115,6 +116,9 @@ class StoredControlPlaneDataSource {
         executions.find((item) => item && (item.state === "LEASED" || item.state === "RUNNING")) ||
         executions[executions.length - 1] ||
         null;
+    }
+    if (extras.execution && typeof this.store.getHandoff === "function") {
+      extras.execution_handoff = await this.store.getHandoff(extras.execution.execution_id);
     }
     return extras;
   }
