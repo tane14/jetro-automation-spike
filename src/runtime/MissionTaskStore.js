@@ -106,6 +106,14 @@ class MissionTaskStore {
   async getInbox(_executionId) {
     throw new Error("MissionTaskStore.getInbox is not implemented");
   }
+
+  async putPreExecutionAck(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putPreExecutionAck is not implemented");
+  }
+
+  async getPreExecutionAck(_executionId) {
+    throw new Error("MissionTaskStore.getPreExecutionAck is not implemented");
+  }
 }
 
 function assertStore(store) {
@@ -137,6 +145,8 @@ function assertStore(store) {
     "getOutbox",
     "putInbox",
     "getInbox",
+    "putPreExecutionAck",
+    "getPreExecutionAck",
   ];
   for (const name of methods) {
     if (typeof store[name] !== "function") {

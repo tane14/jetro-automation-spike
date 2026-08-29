@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Public surface for the local Mission/Task runtime v0.7,
- * Task Dispatch runtime v0.8, and Executor Exchange runtime v0.9.
+ * Task Dispatch runtime v0.8, Executor Exchange runtime v0.9,
+ * and Pre-Execution Gate v1.0.
  * Not an HTTP API, database, GitHub integration, or authority source.
  */
 
@@ -15,6 +15,7 @@ const {
 const { StoredControlPlaneDataSource } = require("./StoredControlPlaneDataSource");
 const { TaskDispatchRuntime } = require("./TaskDispatchRuntime");
 const { ExecutorExchangeRuntime } = require("./ExecutorExchangeRuntime");
+const { PreExecutionGateRuntime } = require("./PreExecutionGateRuntime");
 const { utcDateStamp, nextId, assertCanonicalId } = require("./ids");
 
 module.exports = {
@@ -26,6 +27,7 @@ module.exports = {
   StoredControlPlaneDataSource,
   TaskDispatchRuntime,
   ExecutorExchangeRuntime,
+  PreExecutionGateRuntime,
   utcDateStamp,
   nextId,
   assertCanonicalId,
