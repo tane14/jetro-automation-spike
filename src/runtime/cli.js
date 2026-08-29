@@ -1,18 +1,19 @@
 "use strict";
 
 /**
- * Thin human-triggered CLI for Executor Exchange Runtime v0.9.
- * Does not call Cursor, Claude, or GitHub. Does not print lease_token.
- * Local JSON only. Not authority.
+ * Thin human-triggered CLI for Executor Exchange v0.9 and
+ * Pre-Execution Gate v1.0. Does not call Cursor, Claude, or GitHub.
+ * Does not print lease_token. Local JSON only. Not GitHub approval.
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { JsonFileMissionTaskStore } = require("./JsonFileMissionTaskStore");
 const { ExecutorExchangeRuntime } = require("./ExecutorExchangeRuntime");
+const { PreExecutionGateRuntime } = require("./PreExecutionGateRuntime");
 const { RuntimeValidationError } = require("./MissionTaskRuntime");
 
-const COMMANDS = new Set(["export", "ingest"]);
+const COMMANDS = new Set(["export", "ingest", "authorize"]);
 
 function failCli(message, code = 1) {
   process.stderr.write(`${message}\n`);
@@ -42,7 +43,7 @@ function parseArgs(argv) {
 async function main(argv = process.argv) {
   const { command, flags } = parseArgs(argv);
   if (!COMMANDS.has(command)) {
-    failCli("usage: node src/runtime/cli.js export|ingest --root <dir> ...");
+    failCli("usage: node src/runtime/cli.js export|ingest|authorize --root <dir> ...");
   }
   if (typeof flags.root !== "string" || flags.root.trim() === "") {
     failCli("missing --root");
@@ -52,6 +53,41 @@ async function main(argv = process.argv) {
   }
 
   const store = new JsonFileMissionTaskStore({ rootDir: path.resolve(flags.root) });
+
+  if (command === "authorize") {
+    const extra = Object.keys(flags).filter(
+      (key) => key !== "root" && key !== "execution-id" && key !== "acknowledged-by",
+    );
+    if (extra.length) {
+      failCli(`unknown authorize flag: ${extra.join(", ")}`);
+    }
+    if (typeof flags["acknowledged-by"] !== "string") {
+      failCli("missing --acknowledged-by");
+    }
+    const gate = new PreExecutionGateRuntime({ store });
+    const result = await gate.authorizeExecution({
+      execution_id: flags["execution-id"],
+      acknowledged_by: flags["acknowledged-by"],
+    });
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          execution_id: result.execution.execution_id,
+          task_state: result.task.state,
+          execution_state: result.execution.state,
+          start_authorization: "AUTHORIZED",
+          scope: result.ack.scope,
+          authority_claim: result.ack.authority_claim,
+          substitutes_for_github_review: false,
+          note: "Execution start authorization. Not PR approved, not merge approved.",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
   const exchange = new ExecutorExchangeRuntime({ store });
 
   if (command === "export") {

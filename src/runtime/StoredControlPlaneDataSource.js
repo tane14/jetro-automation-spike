@@ -40,6 +40,7 @@ function entryFor(mission, task, extras = {}) {
       ...(extras.assignment ? { assignment: extras.assignment } : {}),
       ...(extras.execution ? { execution: extras.execution } : {}),
       ...(extras.execution_handoff ? { execution_handoff: extras.execution_handoff } : {}),
+      ...(extras.pre_execution_ack ? { pre_execution_ack: extras.pre_execution_ack } : {}),
     },
   };
 }
@@ -119,6 +120,9 @@ class StoredControlPlaneDataSource {
     }
     if (extras.execution && typeof this.store.getHandoff === "function") {
       extras.execution_handoff = await this.store.getHandoff(extras.execution.execution_id);
+    }
+    if (extras.execution && typeof this.store.getPreExecutionAck === "function") {
+      extras.pre_execution_ack = await this.store.getPreExecutionAck(extras.execution.execution_id);
     }
     return extras;
   }

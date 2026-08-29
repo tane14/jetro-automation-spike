@@ -62,6 +62,7 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     this.handoffsDir = path.join(this.rootDir, "handoffs");
     this.outboxDir = path.join(this.rootDir, "exchange", "outbox");
     this.inboxDir = path.join(this.rootDir, "exchange", "inbox");
+    this.preExecutionAcksDir = path.join(this.rootDir, "pre-execution-acks");
   }
 
   #missionPath(missionId) {
@@ -102,6 +103,11 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
   #inboxPath(executionId) {
     assertCanonicalId("EXEC", executionId);
     return path.join(this.inboxDir, `${executionId}.json`);
+  }
+
+  #preExecutionAckPath(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    return path.join(this.preExecutionAcksDir, `${executionId}.json`);
   }
 
   #transitionFile(executionId, suffix) {
@@ -283,6 +289,22 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
 
   async getInbox(executionId) {
     return readJsonIfPresent(this.#inboxPath(executionId));
+  }
+
+  async putPreExecutionAck(executionId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putPreExecutionAck requires an ack document");
+    }
+    const filePath = this.#preExecutionAckPath(executionId);
+    if (fs.existsSync(filePath)) {
+      throw new Error("pre-execution ack already exists");
+    }
+    writeJsonAtomic(filePath, doc);
+    return doc;
+  }
+
+  async getPreExecutionAck(executionId) {
+    return readJsonIfPresent(this.#preExecutionAckPath(executionId));
   }
 }
 

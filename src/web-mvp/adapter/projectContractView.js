@@ -138,6 +138,13 @@ export function projectContractView(input) {
     sufficientForAuthority,
     requiresLiveGithubApproval,
     approvalStatus: consistent ? "live_verification_required" : "invalid",
+    preExecutionAuthorization: {
+      status: bundle.pre_execution_ack ? "AUTHORIZED" : "NOT_AUTHORIZED",
+      label: "Execution start authorization",
+      summary: bundle.pre_execution_ack
+        ? "Execution start authorization. Not PR approved, not human review approved, not merge approved."
+        : "No pre-execution acknowledgement. Not PR approved.",
+    },
     handoffChain: [
       chainStep(
         "task",

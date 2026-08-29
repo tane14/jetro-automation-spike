@@ -24,6 +24,8 @@ v0.8 `TaskDispatchRuntime` records assignment + LEASED execution and a JSON disp
 
 v0.9 `ExecutorExchangeRuntime` exports that package to `exchange/outbox/` and ingests `execution_handoff`. The result is labeled as an operational executor record, not review or approval. The UI remains observational.
 
+v1.0 `PreExecutionGateRuntime` records a human pre-execution acknowledgement. The UI may show "Execution start authorization" / AUTHORIZED. That is not PR approved, not human review approved, and not merge approved. No authorize button.
+
 ## Run locally
 
 From this directory:
