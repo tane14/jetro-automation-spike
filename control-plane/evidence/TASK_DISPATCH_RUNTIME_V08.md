@@ -32,6 +32,10 @@ Unchanged v0.5: `agent-assignment`, `execution`, `lifecycle-transition`, plus ex
 
 READY is an operational dispatched record. It is not AUTHORIZED and not GitHub APPROVED.
 
+## Q1 hardening
+
+`dispatchTask` calls `verifyContractBinding` on the stored Task before any state mutation or `contract_hash` restamp. A post-stamp material mutation that keeps the old hash fails closed: no assignment, execution, READY transition, or package is written. The stored document is not silently restamped.
+
 ## Concurrency
 
 At most one active lease (`LEASED` or `RUNNING`) per `task_id` in this local process. There is no multi-process lock. Retry after an execution is no longer active requires a new `execution_id`.
@@ -57,3 +61,4 @@ At most one active lease (`LEASED` or `RUNNING`) per `task_id` in this local pro
 - Browser UI stays mock-first; dispatch is a Node API, not a UI button.
 - Single-writer lease check only.
 - `risk_tier` still absent from Task Contract v0.5.
+- Follow-up debt (not this patch): Q2 multi-file transaction, Q3 lease expiration, Q4 package refresh, Q5 assignment history, Q6 corruption isolation.

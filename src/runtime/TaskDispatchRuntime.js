@@ -86,6 +86,10 @@ class TaskDispatchRuntime {
     if (!task) {
       fail([`task not found: ${input.task_id}`]);
     }
+    const storedBinding = verifyContractBinding(task);
+    if (!storedBinding.valid) {
+      fail(storedBinding.errors);
+    }
     if (FORBIDDEN_TASK_STATES.has(task.state)) {
       fail([`task state ${task.state} cannot be dispatched in v0.8`]);
     }

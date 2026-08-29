@@ -13,6 +13,7 @@ const {
   validateDocument,
   validateTransition,
   stampContractHash,
+  verifyContractBinding,
 } = require("../contracts");
 const { assertCanonicalId } = require("./ids");
 
@@ -78,6 +79,41 @@ test("dispatch Task existente PLANNED → assignment, LEASED, READY, package", a
   assert.equal(pkg.instructions.authority_claim, "none");
   assert.equal(pkg.instructions.input_role, "reference_only");
   assert.ok(pkg.mission && pkg.task && pkg.assignment && pkg.execution);
+});
+
+test("Task PLANNED adulterada após stamp (hash antigo) → FAIL closed, sem persistência", async () => {
+  const env = tempEnv();
+  const { task } = await plannedTask(env);
+  const originalHash = task.contract_hash;
+  assert.equal(verifyContractBinding(task).valid, true);
+
+  const tampered = JSON.parse(JSON.stringify(task));
+  tampered.acceptance_criteria = ["adversarial mutation after stamp"];
+  assert.equal(tampered.contract_hash, originalHash);
+  assert.equal(verifyContractBinding(tampered).valid, false);
+  await env.store.putTask(tampered);
+
+  await expectFail(() => env.dispatch.dispatchTask({ task_id: task.task_id }));
+
+  const stored = await env.store.getTask(task.task_id);
+  assert.equal(stored.state, "PLANNED");
+  assert.equal(stored.contract_hash, originalHash);
+  assert.deepEqual(stored.acceptance_criteria, ["adversarial mutation after stamp"]);
+  assert.equal(await env.store.getAssignment(task.task_id), null);
+  assert.equal((await env.store.listExecutionsByTask(task.task_id)).length, 0);
+  assert.equal((await env.store.listExecutions()).length, 0);
+  const jsonFiles = (dir) =>
+    fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => name.endsWith(".json")) : [];
+  assert.equal(jsonFiles(path.join(env.rootDir, "assignments")).length, 0);
+  assert.equal(jsonFiles(path.join(env.rootDir, "executions")).length, 0);
+  assert.equal(jsonFiles(path.join(env.rootDir, "transitions")).length, 0);
+  assert.equal(jsonFiles(path.join(env.rootDir, "packages")).length, 0);
+
+  const source = new StoredControlPlaneDataSource({ store: env.store });
+  const detail = await source.getTaskDetail(task.task_id);
+  assert.equal(detail.contractView.sufficientForAuthority, false);
+  assert.equal(detail.contractView.requiresLiveGithubApproval, true);
+  assert.notEqual(detail.contractView.approvalStatus, "approved");
 });
 
 test("Task inexistente → FAIL", async () => {
