@@ -11,6 +11,7 @@ const PATTERNS = {
   TASK: /^TASK-[0-9]{8}-[0-9]{3}$/,
   CONTRACT: /^CONTRACT-[0-9]{8}-[0-9]{3}$/,
   EXEC: /^EXEC-[0-9]{8}-[0-9]{3}$/,
+  EVD: /^EVD-[0-9]{8}-[0-9]{3}$/,
 };
 
 function utcDateStamp(date) {
