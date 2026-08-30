@@ -2,8 +2,10 @@
 
 /**
  * Task Dispatch runtime v0.8, Executor Exchange runtime v0.9,
- * and Pre-Execution Gate v1.0.
+ * Pre-Execution Gate v1.0, and ControlledCursorRunner v0.1.1.
  * Not an HTTP API, database, GitHub integration, or authority source.
+ * ControlledCursorRunner is not a security boundary.
+ * WINDOWS_DESCENDANT_TERMINATION_GUARANTEE=NO
  */
 
 const { MissionTaskStore, assertStore } = require("./MissionTaskStore");
@@ -16,6 +18,11 @@ const { StoredControlPlaneDataSource } = require("./StoredControlPlaneDataSource
 const { TaskDispatchRuntime } = require("./TaskDispatchRuntime");
 const { ExecutorExchangeRuntime } = require("./ExecutorExchangeRuntime");
 const { PreExecutionGateRuntime } = require("./PreExecutionGateRuntime");
+const {
+  ControlledCursorRunner,
+  CLASSIFICATION,
+} = require("./ControlledCursorRunner");
+const { NodeChildProcessExecutor } = require("./NodeChildProcessExecutor");
 const { utcDateStamp, nextId, assertCanonicalId } = require("./ids");
 
 module.exports = {
@@ -28,6 +35,9 @@ module.exports = {
   TaskDispatchRuntime,
   ExecutorExchangeRuntime,
   PreExecutionGateRuntime,
+  ControlledCursorRunner,
+  CLASSIFICATION,
+  NodeChildProcessExecutor,
   utcDateStamp,
   nextId,
   assertCanonicalId,
