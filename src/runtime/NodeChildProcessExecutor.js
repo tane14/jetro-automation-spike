@@ -1,46 +1,22 @@
 "use strict";
 
 /**
- * Process executor for ControlledCursorRunner v0.1.
- * Captures the child process exit code (not a wrapping shell inference).
- * Does not retry. Not a security boundary.
+ * Process executor for ControlledCursorRunner v0.1.1.
+ *
+ * Windows .cmd command-line construction is prohibited.
+ * Cursor agent.cmd is resolved read-only to node.exe + index.js and spawned
+ * with shell=false + argv. Other .cmd/.bat files are rejected.
+ *
+ * WINDOWS_DESCENDANT_TERMINATION_GUARANTEE=NO
+ * SECURITY_BOUNDARY=NO
+ * LAB_ONLY=YES
  */
 
 const { spawn } = require("node:child_process");
+const { buildChildEnvironment } = require("./childEnvironment");
+const { resolveLaunchTarget } = require("./cursorAgentLaunch");
 
 const FORBIDDEN_FLAGS = Object.freeze(["--force", "--yolo", "--approve-mcps"]);
-
-function quoteWindowsCmdArg(value) {
-  if (typeof value !== "string") {
-    throw new Error("argument must be a string");
-  }
-  if (value.includes("\0")) {
-    throw new Error("argument contains NUL");
-  }
-  if (value === "") {
-    return '""';
-  }
-  if (!/[\s&<>|^()"]/.test(value)) {
-    return value;
-  }
-  let out = '"';
-  let backslashes = 0;
-  for (const ch of value) {
-    if (ch === "\\") {
-      backslashes += 1;
-      continue;
-    }
-    if (ch === '"') {
-      out += "\\".repeat(backslashes * 2 + 1) + '"';
-      backslashes = 0;
-      continue;
-    }
-    out += "\\".repeat(backslashes) + ch;
-    backslashes = 0;
-  }
-  out += "\\".repeat(backslashes * 2) + '"';
-  return out;
-}
 
 function assertSafeArgv(args) {
   if (!Array.isArray(args)) {
@@ -58,6 +34,9 @@ function assertSafeArgv(args) {
 
 function collectStream(stream) {
   const chunks = [];
+  if (!stream) {
+    return chunks;
+  }
   stream.on("data", (chunk) => {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   });
@@ -66,11 +45,11 @@ function collectStream(stream) {
 
 class NodeChildProcessExecutor {
   /**
-   * @param {{ spawnFn?: typeof spawn, comspec?: string }} [options]
+   * @param {{ spawnFn?: typeof spawn, env?: NodeJS.ProcessEnv }} [options]
    */
   constructor(options = {}) {
     this.spawnFn = typeof options.spawnFn === "function" ? options.spawnFn : spawn;
-    this.comspec = options.comspec || process.env.ComSpec || "cmd.exe";
+    this.parentEnv = options.env && typeof options.env === "object" ? options.env : process.env;
   }
 
   /**
@@ -80,10 +59,15 @@ class NodeChildProcessExecutor {
     const file = spec && spec.file;
     const args = spec && spec.args;
     const timeoutMs = spec && spec.timeoutMs;
-    if (typeof file !== "string" || file.trim() === "" || file.includes("\0")) {
-      return Promise.reject(new Error("spawn file is invalid"));
+    const launched = resolveLaunchTarget(file);
+    if (!launched.ok) {
+      return Promise.reject(new Error(launched.reason));
     }
-    assertSafeArgv(args);
+    try {
+      assertSafeArgv(args);
+    } catch (err) {
+      return Promise.reject(err);
+    }
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
       return Promise.reject(new Error("timeoutMs must be a positive integer"));
     }
@@ -94,23 +78,21 @@ class NodeChildProcessExecutor {
       }
     }
 
-    const isCmd = process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
+    const argv = launched.prefixArgs.concat(args);
+    const childEnv = buildChildEnvironment(this.parentEnv, {
+      cursorInvokedAs: launched.cursorInvokedAs || undefined,
+    });
+
     let child;
-    if (isCmd) {
-      const commandLine = [quoteWindowsCmdArg(file), ...args.map(quoteWindowsCmdArg)].join(" ");
-      child = this.spawnFn(this.comspec, ["/d", "/s", "/c", commandLine], {
-        windowsHide: true,
-        windowsVerbatimArguments: true,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      });
-    } else {
-      child = this.spawnFn(file, args, {
+    try {
+      child = this.spawnFn(launched.executable, argv, {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
+        env: childEnv,
         shell: false,
       });
+    } catch (err) {
+      return Promise.reject(err);
     }
 
     return new Promise((resolve, reject) => {
@@ -147,6 +129,8 @@ class NodeChildProcessExecutor {
           stdout,
           stderr,
           spawnAttempts: 1,
+          resolvedFile: launched.executable,
+          windowsDescendantTerminationGuarantee: false,
         });
       };
 
@@ -162,6 +146,5 @@ class NodeChildProcessExecutor {
 
 module.exports = {
   NodeChildProcessExecutor,
-  quoteWindowsCmdArg,
   FORBIDDEN_FLAGS,
 };

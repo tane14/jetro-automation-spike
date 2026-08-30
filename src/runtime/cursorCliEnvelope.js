@@ -2,6 +2,7 @@
 
 /**
  * Defensive parser for Cursor Agent CLI --print --output-format json.
+ * SUCCEEDED requires type === "result", subtype === "success", is_error === false.
  * Malformed input fails closed. Not an authority source.
  */
 
@@ -39,46 +40,32 @@ function parseUsage(raw) {
   return Object.keys(usage).length ? usage : null;
 }
 
+function invalid(envelope, parseError) {
+  return {
+    structuredOutputValid: false,
+    protocolStatus: RESULT_CLASS.INVALID_STRUCTURED_OUTPUT,
+    envelope,
+    agentResult: envelope ? envelope.result : null,
+    sessionId: envelope ? envelope.session_id : null,
+    requestId: envelope ? envelope.request_id : null,
+    usage: envelope ? envelope.usage : null,
+    parseError,
+  };
+}
+
 function parseCursorCliEnvelope(stdoutText) {
   if (typeof stdoutText !== "string" || stdoutText.trim() === "") {
-    return {
-      structuredOutputValid: false,
-      protocolStatus: RESULT_CLASS.INVALID_STRUCTURED_OUTPUT,
-      envelope: null,
-      agentResult: null,
-      sessionId: null,
-      requestId: null,
-      usage: null,
-      parseError: "stdout is empty or not text",
-    };
+    return invalid(null, "stdout is empty or not text");
   }
   const trimmed = stdoutText.trim();
   let parsed;
   try {
     parsed = JSON.parse(trimmed);
   } catch (err) {
-    return {
-      structuredOutputValid: false,
-      protocolStatus: RESULT_CLASS.INVALID_STRUCTURED_OUTPUT,
-      envelope: null,
-      agentResult: null,
-      sessionId: null,
-      requestId: null,
-      usage: null,
-      parseError: err instanceof Error ? err.message : "JSON parse failed",
-    };
+    return invalid(null, err instanceof Error ? err.message : "JSON parse failed");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {
-      structuredOutputValid: false,
-      protocolStatus: RESULT_CLASS.INVALID_STRUCTURED_OUTPUT,
-      envelope: null,
-      agentResult: null,
-      sessionId: null,
-      requestId: null,
-      usage: null,
-      parseError: "JSON root is not an object",
-    };
+    return invalid(null, "JSON root is not an object");
   }
   const envelope = {
     type: asString(parsed.type),
@@ -91,19 +78,10 @@ function parseCursorCliEnvelope(stdoutText) {
     request_id: asString(parsed.request_id),
     usage: parseUsage(parsed.usage),
   };
-  if (envelope.type !== "result") {
-    return {
-      structuredOutputValid: false,
-      protocolStatus: RESULT_CLASS.INVALID_STRUCTURED_OUTPUT,
-      envelope,
-      agentResult: envelope.result,
-      sessionId: envelope.session_id,
-      requestId: envelope.request_id,
-      usage: envelope.usage,
-      parseError: "envelope type is not result",
-    };
+  if (parsed.type !== "result") {
+    return invalid(envelope, "envelope type is not result");
   }
-  if (envelope.is_error === true || envelope.subtype === "error") {
+  if (typeof parsed.is_error === "boolean" && parsed.is_error === true) {
     return {
       structuredOutputValid: true,
       protocolStatus: RESULT_CLASS.CLI_ERROR,
@@ -115,10 +93,28 @@ function parseCursorCliEnvelope(stdoutText) {
       parseError: null,
     };
   }
-  if (envelope.subtype !== null && envelope.subtype !== "success") {
+  if (typeof parsed.subtype === "string" && parsed.subtype === "error") {
     return {
       structuredOutputValid: true,
       protocolStatus: RESULT_CLASS.CLI_ERROR,
+      envelope,
+      agentResult: envelope.result,
+      sessionId: envelope.session_id,
+      requestId: envelope.request_id,
+      usage: envelope.usage,
+      parseError: null,
+    };
+  }
+  if (typeof parsed.subtype !== "string") {
+    return invalid(envelope, "envelope subtype is missing or not a string");
+  }
+  if (typeof parsed.is_error !== "boolean") {
+    return invalid(envelope, "envelope is_error is missing or not a boolean");
+  }
+  if (parsed.subtype === "success" && parsed.is_error === false) {
+    return {
+      structuredOutputValid: true,
+      protocolStatus: RESULT_CLASS.SUCCEEDED,
       envelope,
       agentResult: envelope.result,
       sessionId: envelope.session_id,
@@ -129,7 +125,7 @@ function parseCursorCliEnvelope(stdoutText) {
   }
   return {
     structuredOutputValid: true,
-    protocolStatus: RESULT_CLASS.SUCCEEDED,
+    protocolStatus: RESULT_CLASS.CLI_ERROR,
     envelope,
     agentResult: envelope.result,
     sessionId: envelope.session_id,

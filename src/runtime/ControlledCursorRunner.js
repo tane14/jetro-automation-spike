@@ -1,9 +1,10 @@
 "use strict";
 
 /**
- * ControlledCursorRunner v0.1 — adapter/runtime capability.
+ * ControlledCursorRunner v0.1.1 — adapter/runtime capability.
  *
  * RISK_TIER=T1, ENVIRONMENT=LAB_ONLY, SECURITY_BOUNDARY=NO.
+ * WINDOWS_DESCENDANT_TERMINATION_GUARANTEE=NO
  * Not authorized for production, VPS, JETRO-IBE, AWS, databases, T2/T3.
  *
  * Executes an already-authorized request. PreExecutionGateRuntime remains
@@ -13,6 +14,7 @@
  * --trust is emitted only for the exact authorized workspace.
  * Never emits --force, --yolo, or --approve-mcps.
  * Never retries Agent invocation.
+ * Never constructs a cmd.exe command line from untrusted data.
  */
 
 const { sha256Hex } = require("../contracts/sha256");
@@ -77,6 +79,42 @@ function blockedResult(base, reasons) {
     environment: "LAB_ONLY",
     spawnAttempts: 0,
     blockedReasons: Array.isArray(reasons) ? reasons : [String(reasons)],
+    windowsDescendantTerminationGuarantee: false,
+  };
+}
+
+function processErrorResult(base, err, spawnStartedAt) {
+  const finishedAt = base.finishedAt;
+  const message = err instanceof Error ? err.message : "spawn failed";
+  return {
+    ...base,
+    startedAt: spawnStartedAt || base.startedAt,
+    finishedAt,
+    timedOut: false,
+    processId: null,
+    processExitCode: null,
+    stdout: "",
+    stderr: "",
+    stdoutHash: sha256BytesHex(Buffer.alloc(0)),
+    stderrHash: sha256BytesHex(Buffer.alloc(0)),
+    structuredOutputValid: false,
+    cliEnvelope: null,
+    agentResult: null,
+    sessionId: null,
+    requestId: null,
+    usage: null,
+    resultClassification: CLASSIFICATION.PROCESS_ERROR,
+    processExitStatus: "SPAWN_FAILED",
+    cliProtocolStatus: "NOT_STARTED",
+    spawnError: message,
+    lifecycleAdvanced: false,
+    taskCompletionAuthorized: false,
+    securityBoundary: false,
+    riskTier: "T1",
+    environment: "LAB_ONLY",
+    spawnAttempts: 1,
+    blockedReasons: [],
+    windowsDescendantTerminationGuarantee: false,
   };
 }
 
@@ -268,11 +306,28 @@ class ControlledCursorRunner {
 
     const spawnStarted = this.clock();
     const spawnStartedAt = spawnStarted.toISOString();
-    const execResult = await this.processExecutor.spawn({
-      file: invocation.file,
-      args: invocation.args,
-      timeoutMs,
-    });
+    let execResult;
+    try {
+      execResult = await this.processExecutor.spawn({
+        file: invocation.file,
+        args: invocation.args,
+        timeoutMs,
+      });
+    } catch (err) {
+      const failedAt = isoNow(this.clock);
+      const durationMs = Math.max(0, this.clock().getTime() - spawnStarted.getTime());
+      return processErrorResult(
+        {
+          ...identity,
+          commandIdentity,
+          startedAt: spawnStartedAt,
+          finishedAt: failedAt,
+          durationMs,
+        },
+        err,
+        spawnStartedAt,
+      );
+    }
     const finished = this.clock();
     const finishedAt = finished.toISOString();
     const durationMs = Math.max(0, finished.getTime() - spawnStarted.getTime());
@@ -300,7 +355,11 @@ class ControlledCursorRunner {
       taskId: request.taskId,
       contractId: request.contractId,
       executionId: request.executionId,
-      commandIdentity,
+      commandIdentity: {
+        file: commandIdentity.file,
+        resolvedFile: typeof execResult.resolvedFile === "string" ? execResult.resolvedFile : null,
+        args: commandIdentity.args,
+      },
       cliVersion: this.cliVersion,
       workspacePath: ws.canonical,
       promptHash,
@@ -331,6 +390,7 @@ class ControlledCursorRunner {
       environment: "LAB_ONLY",
       spawnAttempts: execResult.spawnAttempts === undefined ? 1 : execResult.spawnAttempts,
       blockedReasons: [],
+      windowsDescendantTerminationGuarantee: false,
     };
   }
 

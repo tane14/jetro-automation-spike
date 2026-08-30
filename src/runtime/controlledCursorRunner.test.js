@@ -432,23 +432,29 @@ test("executor timeout terminates without retry", async () => {
   assert.equal(result.spawnAttempts, 1);
 });
 
-test("win32 cmd script exit code is captured when platform supports it", async (t) => {
+test("win32 cmd scripts that are not Cursor launchers are rejected before spawn", async (t) => {
   if (process.platform !== "win32") {
     t.skip("cmd.exe fixture is Windows-only");
     return;
   }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jetro-exit-probe-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jetro-cmd-reject-"));
+  const marker = path.join(dir, "marker.txt");
   const script = path.join(dir, "exit-probe.cmd");
-  fs.writeFileSync(script, "@echo off\r\necho probe-out\r\necho probe-err 1>&2\r\nexit /b 9\r\n", "utf8");
-  const exec = new NodeChildProcessExecutor();
-  const result = await exec.spawn({
-    file: script,
-    args: [],
-    timeoutMs: 8000,
+  fs.writeFileSync(
+    script,
+    `@echo off\r\necho pwned> "${marker}"\r\nexit /b 0\r\n`,
+    "utf8",
+  );
+  const exec = new NodeChildProcessExecutor({
+    spawnFn: () => {
+      throw new Error("spawnFn must not be called for .cmd");
+    },
   });
-  assert.equal(result.timedOut, false);
-  assert.equal(result.exitCode, 9);
-  assert.match(result.stdout.toString("utf8"), /probe-out/);
+  await assert.rejects(
+    () => exec.spawn({ file: script, args: [], timeoutMs: 8000 }),
+    /cmd\/bat execution boundary is not permitted/,
+  );
+  assert.equal(fs.existsSync(marker), false);
 });
 
 test("constructor refuses missing gate evaluator", () => {
@@ -456,4 +462,93 @@ test("constructor refuses missing gate evaluator", () => {
     () => new ControlledCursorRunner({ processExecutor: fakeExecutor() }),
     /evaluateStartAuthorization/,
   );
+});
+
+test("F3. {type:result} without subtype/is_error is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(JSON.stringify({ type: "result" }));
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+  assert.equal(parsed.protocolStatus, "INVALID_STRUCTURED_OUTPUT");
+});
+
+test("F3. missing subtype is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(JSON.stringify({ type: "result", is_error: false }));
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+});
+
+test("F3. missing is_error is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(JSON.stringify({ type: "result", subtype: "success" }));
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+});
+
+test("F3. wrong subtype type is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(JSON.stringify({ type: "result", subtype: true, is_error: false }));
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+  assert.equal(parsed.protocolStatus, "INVALID_STRUCTURED_OUTPUT");
+});
+
+test("F3. wrong is_error type is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(
+    JSON.stringify({ type: "result", subtype: "success", is_error: "false" }),
+  );
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+  assert.equal(parsed.protocolStatus, "INVALID_STRUCTURED_OUTPUT");
+});
+
+test("F3. is_error=true is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(
+    JSON.stringify({ type: "result", subtype: "success", is_error: true }),
+  );
+  assert.equal(parsed.protocolStatus, "CLI_ERROR");
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+});
+
+test("F3. subtype=error is not SUCCEEDED", () => {
+  const parsed = parseCursorCliEnvelope(
+    JSON.stringify({ type: "result", subtype: "error", is_error: false }),
+  );
+  assert.equal(parsed.protocolStatus, "CLI_ERROR");
+  assert.notEqual(parsed.protocolStatus, "SUCCEEDED");
+});
+
+test("F5. workspace metacharacters are BLOCKED before spawn", async () => {
+  const executor = fakeExecutor();
+  const dirty = WS + 'q" & echo x';
+  const result = await runnerWith(executor).run(
+    baseRequest({
+      workspacePath: dirty,
+      trustAuthorization: { authorized: true, workspacePath: dirty },
+    }),
+  );
+  assert.equal(result.resultClassification, CLASSIFICATION.BLOCKED);
+  assert.equal(executor.calls.length, 0);
+});
+
+test("F5. sibling workspace is not the authorized path", async () => {
+  const executor = fakeExecutor();
+  const result = await runnerWith(executor).run(
+    baseRequest({
+      workspacePath: OTHER,
+      trustAuthorization: { authorized: true, workspacePath: WS },
+    }),
+  );
+  assert.equal(result.resultClassification, CLASSIFICATION.BLOCKED);
+  assert.equal(executor.calls.length, 0);
+});
+
+test("F6. spawn rejection becomes PROCESS_ERROR without throwing", async () => {
+  const missing = path.join(os.tmpdir(), "jetro-missing-agent-does-not-exist.exe");
+  const runner = new ControlledCursorRunner({
+    processExecutor: new NodeChildProcessExecutor(),
+    evaluateStartAuthorization: allowedStart(),
+    agentPath: missing,
+    clock: () => new Date("2026-08-30T18:00:00.000Z"),
+  });
+  const result = await runner.run(baseRequest());
+  assert.equal(result.resultClassification, CLASSIFICATION.PROCESS_ERROR);
+  assert.equal(result.processExitStatus, "SPAWN_FAILED");
+  assert.equal(result.lifecycleAdvanced, false);
+  assert.equal(result.taskCompletionAuthorized, false);
+  assert.equal(result.securityBoundary, false);
+  assert.equal(result.spawnAttempts, 1);
+  assert.equal(result.env, undefined);
 });
