@@ -5,11 +5,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { verifyContractBinding } = require("../contracts");
 const { JsonFileMissionTaskStore } = require("./JsonFileMissionTaskStore");
 const { MissionTaskRuntime, RuntimeValidationError } = require("./MissionTaskRuntime");
 const { TaskDispatchRuntime } = require("./TaskDispatchRuntime");
 const { PreExecutionGateRuntime } = require("./PreExecutionGateRuntime");
-const { GovernedExecutionRuntime } = require("./GovernedExecutionRuntime");
+const { GovernedExecutionRuntime, MemoryEvidenceSink } = require("./GovernedExecutionRuntime");
+const { GovernedExecutionLifecycleRuntime } = require("./GovernedExecutionLifecycleRuntime");
 const { validateRunnerResult } = require("./RunnerResultValidator");
 
 const BASE_SHA = "21f904c2ab693699940487b307c5f759f56927a5";
@@ -17,10 +19,11 @@ const HUMAN = "MACHUB";
 const SYNTHETIC_CANARY = "SYNTHETIC_GOVERNED_CANARY_FIXTURE";
 const SYNTHETIC_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function tempEnv() {
+function tempEnv(clockFn) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "jetro-v14a-"));
   const store = new JsonFileMissionTaskStore({ rootDir });
-  const clock = () => new Date("2026-08-30T22:00:00.000Z");
+  const clock =
+    typeof clockFn === "function" ? clockFn : () => new Date("2026-08-30T22:00:00.000Z");
   const missions = new MissionTaskRuntime({ store, clock });
   const dispatch = new TaskDispatchRuntime({ store, clock });
   const gate = new PreExecutionGateRuntime({ store, clock });
@@ -106,13 +109,32 @@ function fakeRunner(resultOrFn) {
   };
 }
 
-function orchestrator(env, runner) {
+function orchestrator(env, runner, extra = {}) {
   return new GovernedExecutionRuntime({
     store: env.store,
     evaluateStartAuthorization: (id) => env.gate.evaluateStartAuthorization(id),
     runner,
     clock: env.clock,
+    ...extra,
   });
+}
+
+function lifecycleRuntime(env, evaluateStartAuthorization) {
+  return new GovernedExecutionLifecycleRuntime({
+    store: env.store,
+    clock: env.clock,
+    evaluateStartAuthorization:
+      evaluateStartAuthorization || ((id) => env.gate.evaluateStartAuthorization(id)),
+  });
+}
+
+async function startRunning(env) {
+  const leased = await authorizedLease(env);
+  const lifecycle = lifecycleRuntime(env);
+  await lifecycle.markExecutionRunning({
+    execution_id: leased.dispatched.execution.execution_id,
+  });
+  return { ...leased, lifecycle };
 }
 
 function requestFor(task, execution) {
@@ -514,3 +536,352 @@ test("exit 0 is not sufficient by itself (validator unit)", () => {
   const validation = validateRunnerResult(result, passingExpectations());
   assert.equal(validation.passed, false);
 });
+
+test("P1. fabricated {allowed:true} without canonical gate is REJECTED", async () => {
+  const env = tempEnv();
+  const mission = await env.missions.createMission({
+    title: "p1",
+    base_sha: BASE_SHA,
+    acceptance_criteria: ["x"],
+  });
+  const task = await env.missions.createTask({
+    mission_id: mission.mission_id,
+    acceptance_criteria: ["x"],
+  });
+  const dispatched = await env.dispatch.dispatchTask({ task_id: task.task_id });
+  const lifecycle = lifecycleRuntime(env);
+  await assert.rejects(
+    () =>
+      lifecycle.markExecutionRunning({
+        execution_id: dispatched.execution.execution_id,
+        startAuthorization: { allowed: true },
+      }),
+    RuntimeValidationError,
+  );
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "LEASED");
+  assert.equal((await env.store.getTask(task.task_id)).state, "READY");
+});
+
+test("P2. expired lease → no RUNNING, runner call count 0", async () => {
+  let now = new Date("2026-08-30T22:00:00.000Z");
+  const env = tempEnv(() => now);
+  const { task, dispatched } = await authorizedLease(env);
+  now = new Date("2026-08-30T23:00:01.000Z");
+  const runner = fakeRunner(
+    fixtureRunnerResult({
+      taskId: task.task_id,
+      contractId: task.contract_id,
+      executionId: dispatched.execution.execution_id,
+    }),
+  );
+  const runtime = orchestrator(env, runner);
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: requestFor(task, dispatched.execution),
+        validationExpectations: passingExpectations(),
+      }),
+    /lease has expired/,
+  );
+  assert.equal(runner.calls.length, 0);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "LEASED");
+  assert.equal((await env.store.getTask(task.task_id)).state, "AUTHORIZED");
+});
+
+test("P3. fabricated {passed:true} without validator-backed runnerResult is REJECTED", async () => {
+  const env = tempEnv();
+  const { task, dispatched, lifecycle } = await startRunning(env);
+  await assert.rejects(
+    () =>
+      lifecycle.markExecutionReviewReady({
+        execution_id: dispatched.execution.execution_id,
+        validation: { passed: true },
+      }),
+    RuntimeValidationError,
+  );
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RUNNING");
+  assert.equal((await env.store.getTask(task.task_id)).state, "IN_PROGRESS");
+});
+
+test("P4. tampered IN_PROGRESS binding → review-ready REJECTED, no silent restamp", async () => {
+  const env = tempEnv();
+  const { task, dispatched, lifecycle } = await startRunning(env);
+  const current = await env.store.getTask(task.task_id);
+  const originalHash = current.contract_hash;
+  current.acceptance_criteria = ["tampered after IN_PROGRESS"];
+  await env.store.putTask(current);
+  assert.equal(verifyContractBinding(await env.store.getTask(task.task_id)).valid, false);
+  await assert.rejects(
+    () =>
+      lifecycle.markExecutionReviewReady({
+        execution_id: dispatched.execution.execution_id,
+        runnerResult: fixtureRunnerResult({
+          taskId: task.task_id,
+          contractId: task.contract_id,
+          executionId: dispatched.execution.execution_id,
+        }),
+        validationExpectations: passingExpectations(),
+      }),
+    /contract_hash does not match/,
+  );
+  const stored = await env.store.getTask(task.task_id);
+  assert.equal(stored.state, "IN_PROGRESS");
+  assert.equal(stored.contract_hash, originalHash);
+  assert.deepEqual(stored.acceptance_criteria, ["tampered after IN_PROGRESS"]);
+  assert.equal(verifyContractBinding(stored).valid, false);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RUNNING");
+});
+
+test("P5. tampered IN_PROGRESS binding → FAILED does not silently restamp", async () => {
+  const env = tempEnv();
+  const { task, dispatched, lifecycle } = await startRunning(env);
+  const current = await env.store.getTask(task.task_id);
+  const originalHash = current.contract_hash;
+  current.acceptance_criteria = ["tampered fail path"];
+  await env.store.putTask(current);
+  await assert.rejects(
+    () => lifecycle.markExecutionFailed({ execution_id: dispatched.execution.execution_id }),
+    /contract_hash does not match/,
+  );
+  const stored = await env.store.getTask(task.task_id);
+  assert.equal(stored.state, "IN_PROGRESS");
+  assert.equal(stored.contract_hash, originalHash);
+  assert.deepEqual(stored.acceptance_criteria, ["tampered fail path"]);
+  assert.equal(verifyContractBinding(stored).valid, false);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RUNNING");
+});
+
+test("P6. review-ready persist failure → Evidence does not claim that transition persisted", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const sink = new MemoryEvidenceSink();
+  const original = env.store.putExecution.bind(env.store);
+  env.store.putExecution = async (doc) => {
+    if (doc && doc.state === "RESULT_SUBMITTED") {
+      throw new Error("persist RESULT_SUBMITTED failed");
+    }
+    return original(doc);
+  };
+  const runtime = orchestrator(
+    env,
+    fakeRunner(
+      fixtureRunnerResult({
+        taskId: task.task_id,
+        contractId: task.contract_id,
+        executionId: dispatched.execution.execution_id,
+      }),
+    ),
+    { evidenceSink: sink },
+  );
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: requestFor(task, dispatched.execution),
+        validationExpectations: passingExpectations(),
+      }),
+    /persist RESULT_SUBMITTED failed/,
+  );
+  assert.equal(sink.records.length, 0);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RUNNING");
+  assert.equal((await env.store.getTask(task.task_id)).state, "IN_PROGRESS");
+});
+
+test("P7. FAILED persist failure → Evidence does not claim FAILED persisted", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const sink = new MemoryEvidenceSink();
+  const original = env.store.putExecution.bind(env.store);
+  env.store.putExecution = async (doc) => {
+    if (doc && doc.state === "FAILED") {
+      throw new Error("persist FAILED failed");
+    }
+    return original(doc);
+  };
+  const runtime = orchestrator(
+    env,
+    fakeRunner(
+      fixtureRunnerResult({
+        taskId: task.task_id,
+        contractId: task.contract_id,
+        executionId: dispatched.execution.execution_id,
+      }),
+    ),
+    { evidenceSink: sink },
+  );
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: requestFor(task, dispatched.execution),
+        validationExpectations: {
+          ...passingExpectations(),
+          expectedCanary: "THIS_CANARY_IS_ABSENT",
+        },
+      }),
+    /persist FAILED failed/,
+  );
+  assert.equal(sink.records.length, 0);
+  for (const record of sink.records) {
+    assert.notEqual(record.lifecycleTransition && record.lifecycleTransition.execution, "RUNNING->FAILED");
+    assert.notEqual(record.transitionPersisted, true);
+  }
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RUNNING");
+  assert.equal((await env.store.getTask(task.task_id)).state, "IN_PROGRESS");
+});
+
+test("P8. success persists lifecycle first; Evidence records actual RESULT_SUBMITTED + REVIEW_READY", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const sink = new MemoryEvidenceSink();
+  const runtime = orchestrator(
+    env,
+    fakeRunner(
+      fixtureRunnerResult({
+        taskId: task.task_id,
+        contractId: task.contract_id,
+        executionId: dispatched.execution.execution_id,
+      }),
+    ),
+    { evidenceSink: sink },
+  );
+  const out = await runtime.runGovernedExecution({
+    execution_id: dispatched.execution.execution_id,
+    runnerRequest: requestFor(task, dispatched.execution),
+    validationExpectations: passingExpectations(),
+  });
+  assert.equal(out.execution.state, "RESULT_SUBMITTED");
+  assert.equal(out.task.state, "REVIEW_READY");
+  assert.equal(sink.records.length, 1);
+  assert.equal(out.evidence.transitionPersisted, true);
+  assert.equal(out.evidence.persistedExecutionState, "RESULT_SUBMITTED");
+  assert.equal(out.evidence.persistedTaskState, "REVIEW_READY");
+  assert.equal(out.evidence.lifecycleTransition.execution, "RUNNING->RESULT_SUBMITTED");
+  assert.equal(out.evidence.lifecycleTransition.task, "IN_PROGRESS->REVIEW_READY");
+  assert.equal(out.taskCompletionAuthorized, false);
+  assert.equal(out.evidence.evidenceAuthority, false);
+});
+
+test("P9. evidence write failure after lifecycle persist is surfaced; no Task completion", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const runtime = orchestrator(
+    env,
+    fakeRunner(
+      fixtureRunnerResult({
+        taskId: task.task_id,
+        contractId: task.contract_id,
+        executionId: dispatched.execution.execution_id,
+      }),
+    ),
+    {
+      evidenceSink: {
+        async putEvidence() {
+          throw new Error("evidence sink failed");
+        },
+        async listEvidenceIds() {
+          return [];
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: requestFor(task, dispatched.execution),
+        validationExpectations: passingExpectations(),
+      }),
+    /evidence persistence failed after lifecycle persist/,
+  );
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "RESULT_SUBMITTED");
+  const persistedTask = await env.store.getTask(task.task_id);
+  assert.equal(persistedTask.state, "REVIEW_READY");
+  assert.notEqual(persistedTask.state, "APPROVED");
+  assert.notEqual(persistedTask.state, "COMPLETED");
+});
+
+test("P10. runnerRequest taskId mismatch → Runner call count 0", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const runner = fakeRunner(
+    fixtureRunnerResult({
+      taskId: task.task_id,
+      contractId: task.contract_id,
+      executionId: dispatched.execution.execution_id,
+    }),
+  );
+  const runtime = orchestrator(env, runner);
+  const request = requestFor(task, dispatched.execution);
+  request.taskId = "TASK-20260830-999";
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: request,
+        validationExpectations: passingExpectations(),
+      }),
+    /runnerRequest.taskId does not match/,
+  );
+  assert.equal(runner.calls.length, 0);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "LEASED");
+});
+
+test("P11. runnerRequest contractId mismatch → Runner call count 0", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const runner = fakeRunner(
+    fixtureRunnerResult({
+      taskId: task.task_id,
+      contractId: task.contract_id,
+      executionId: dispatched.execution.execution_id,
+    }),
+  );
+  const runtime = orchestrator(env, runner);
+  const request = requestFor(task, dispatched.execution);
+  request.contractId = "CONTRACT-20260830-999";
+  await assert.rejects(
+    () =>
+      runtime.runGovernedExecution({
+        execution_id: dispatched.execution.execution_id,
+        runnerRequest: request,
+        validationExpectations: passingExpectations(),
+      }),
+    /runnerRequest.contractId does not match/,
+  );
+  assert.equal(runner.calls.length, 0);
+  assert.equal((await env.store.getExecution(dispatched.execution.execution_id)).state, "LEASED");
+});
+
+test("P12. previous A–O authority properties remain valid", async () => {
+  const env = tempEnv();
+  const { task, dispatched } = await authorizedLease(env);
+  const runner = fakeRunner(
+    fixtureRunnerResult({
+      taskId: task.task_id,
+      contractId: task.contract_id,
+      executionId: dispatched.execution.execution_id,
+    }),
+  );
+  const runtime = orchestrator(env, runner);
+  const out = await runtime.runGovernedExecution({
+    execution_id: dispatched.execution.execution_id,
+    runnerRequest: requestFor(task, dispatched.execution),
+    validationExpectations: passingExpectations(),
+  });
+  assert.equal(runner.calls.length, 1);
+  assert.equal(out.execution.state, "RESULT_SUBMITTED");
+  assert.equal(out.task.state, "REVIEW_READY");
+  assert.equal(out.taskCompletionAuthorized, false);
+  assert.equal(out.evidence.evidenceAuthority, false);
+  await assert.rejects(() =>
+    runtime.runGovernedExecution({
+      execution_id: dispatched.execution.execution_id,
+      runnerRequest: requestFor(task, dispatched.execution),
+      validationExpectations: passingExpectations(),
+    }),
+  );
+  assert.equal(runner.calls.length, 1);
+});
+

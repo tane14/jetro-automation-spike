@@ -3,7 +3,7 @@
 /**
  * Task Dispatch runtime v0.8, Executor Exchange runtime v0.9,
  * Pre-Execution Gate v1.0, ControlledCursorRunner v0.1.1,
- * and governed execution lifecycle v1.4A.
+ * and governed execution lifecycle v1.4.1.
  * Not an HTTP API, database, GitHub integration, or authority source.
  * ControlledCursorRunner is not a security boundary.
  * WINDOWS_DESCENDANT_TERMINATION_GUARANTEE=NO

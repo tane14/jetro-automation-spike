@@ -42,6 +42,28 @@ function buildGovernedRunEvidence(input) {
   const result = input.runnerResult || {};
   const validation = input.validation || { passed: false, findings: ["validation missing"] };
   const commandIdentity = result.commandIdentity || null;
+  const persistedExecutionState =
+    input.execution && typeof input.execution.state === "string" ? input.execution.state : null;
+  const persistedTaskState = input.task && typeof input.task.state === "string" ? input.task.state : null;
+  const transitionPersisted = input.transitionPersisted === true;
+
+  let lifecycleTransition;
+  if (transitionPersisted && persistedExecutionState === "RESULT_SUBMITTED" && persistedTaskState === "REVIEW_READY") {
+    lifecycleTransition = {
+      execution: "RUNNING->RESULT_SUBMITTED",
+      task: "IN_PROGRESS->REVIEW_READY",
+    };
+  } else if (transitionPersisted && persistedExecutionState === "FAILED" && persistedTaskState === "FAILED") {
+    lifecycleTransition = {
+      execution: "RUNNING->FAILED",
+      task: "IN_PROGRESS->FAILED",
+    };
+  } else {
+    lifecycleTransition = {
+      execution: persistedExecutionState ? `persisted:${persistedExecutionState}` : "unknown",
+      task: persistedTaskState ? `persisted:${persistedTaskState}` : "unknown",
+    };
+  }
 
   return {
     schema_version: "0.5-governed-run-evidence-data",
@@ -95,10 +117,10 @@ function buildGovernedRunEvidence(input) {
       input.expectations && input.expectations.repositoryIntegrityOk === true ? true : false,
     workspaceIntegrityOk:
       input.expectations && input.expectations.workspaceIntegrityOk === true ? true : false,
-    lifecycleTransition:
-      validation.passed === true
-        ? { execution: "RUNNING->RESULT_SUBMITTED", task: "IN_PROGRESS->REVIEW_READY" }
-        : { execution: "RUNNING->FAILED", task: "IN_PROGRESS->FAILED" },
+    persistedExecutionState,
+    persistedTaskState,
+    transitionPersisted,
+    lifecycleTransition,
     retryCount: 0,
     agentResultCaptured: typeof result.agentResult === "string",
   };

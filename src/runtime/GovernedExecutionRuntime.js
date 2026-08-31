@@ -3,10 +3,13 @@
 /**
  * Orchestrates one governed Cursor execution:
  * Gate allowed===true → persist RUNNING → injected runner → validate →
- * evidence DATA → REVIEW_READY (task) / RESULT_SUBMITTED (execution).
+ * persist RESULT_SUBMITTED/REVIEW_READY or FAILED → Evidence DATA of
+ * the actually persisted states.
  *
  * Does not grant Task completion. EVIDENCE_AUTHORITY=NO.
  * Real Cursor Agent is not invoked unless a real runner is injected.
+ * MULTI_FILE_ATOMICITY=NO. PARTIAL_PERSIST_RECOVERY=NOT_IMPLEMENTED.
+ * FAIL_CLOSED=YES.
  */
 
 const { assertStore } = require("./MissionTaskStore");
@@ -70,6 +73,7 @@ class GovernedExecutionRuntime {
     this.lifecycle = new GovernedExecutionLifecycleRuntime({
       store: this.store,
       clock: this.clock,
+      evaluateStartAuthorization: this.evaluateStartAuthorization,
     });
   }
 
@@ -84,9 +88,6 @@ class GovernedExecutionRuntime {
     if (!input.runnerRequest || typeof input.runnerRequest !== "object") {
       fail(["runnerRequest is required"]);
     }
-    if (input.runnerRequest.executionId !== input.execution_id) {
-      fail(["runnerRequest.executionId does not match execution_id"]);
-    }
 
     const execution = await this.store.getExecution(input.execution_id);
     if (!execution) {
@@ -96,23 +97,22 @@ class GovernedExecutionRuntime {
       fail([`single-execution envelope already started: ${execution.state}`]);
     }
 
-    let startAuth;
-    try {
-      startAuth = await this.evaluateStartAuthorization(input.execution_id);
-    } catch (err) {
-      fail([err instanceof Error ? err.message : "start authorization evaluation failed"]);
+    const task = await this.store.getTask(execution.task_id);
+    if (!task) {
+      fail(["task not found"]);
     }
-    if (!startAuth || startAuth.allowed !== true) {
-      fail(
-        startAuth && Array.isArray(startAuth.reasons) && startAuth.reasons.length
-          ? startAuth.reasons
-          : ["pre-execution start authorization is not allowed"],
-      );
+    if (input.runnerRequest.executionId !== execution.execution_id) {
+      fail(["runnerRequest.executionId does not match execution_id"]);
+    }
+    if (input.runnerRequest.taskId !== task.task_id) {
+      fail(["runnerRequest.taskId does not match task_id"]);
+    }
+    if (input.runnerRequest.contractId !== task.contract_id) {
+      fail(["runnerRequest.contractId does not match contract_id"]);
     }
 
     const running = await this.lifecycle.markExecutionRunning({
       execution_id: input.execution_id,
-      startAuthorization: startAuth,
     });
 
     let runnerResult;
@@ -126,8 +126,23 @@ class GovernedExecutionRuntime {
     const expectations = input.validationExpectations || {};
     const validation = validateRunnerResult(runnerResult, expectations);
 
+    let persisted;
+    if (validation.passed === true) {
+      persisted = await this.lifecycle.markExecutionReviewReady({
+        execution_id: input.execution_id,
+        runnerResult,
+        validationExpectations: expectations,
+      });
+    } else {
+      persisted = await this.lifecycle.markExecutionFailed({
+        execution_id: input.execution_id,
+      });
+    }
+
     const ack = await this.store.getPreExecutionAck(input.execution_id);
     const dispatchPackage = await this.store.getPackage(input.execution_id);
+    const persistedExecution = await this.store.getExecution(input.execution_id);
+    const persistedTask = await this.store.getTask(persisted.task.task_id);
     const existingIds =
       this.evidenceSink && typeof this.evidenceSink.listEvidenceIds === "function"
         ? await this.evidenceSink.listEvidenceIds()
@@ -135,8 +150,8 @@ class GovernedExecutionRuntime {
     const evidenceId = nextEvidenceId(this.clock, existingIds);
     const evidence = buildGovernedRunEvidence({
       evidenceId,
-      task: running.task,
-      execution: running.execution,
+      task: persistedTask,
+      execution: persistedExecution,
       ack,
       dispatchPackage,
       provenance: running.provenance,
@@ -144,32 +159,23 @@ class GovernedExecutionRuntime {
       validation,
       expectations,
       canonicalMainSha: running.execution.base_sha,
+      transitionPersisted: true,
     });
-    await this.evidenceSink.putEvidence(evidence);
-
-    if (validation.passed === true) {
-      const reviewable = await this.lifecycle.markExecutionReviewReady({
-        execution_id: input.execution_id,
-        validation,
-      });
-      return {
-        execution: reviewable.execution,
-        task: reviewable.task,
-        runnerResult,
-        validation,
-        evidence,
-        provenance: running.provenance,
-        taskCompletionAuthorized: false,
-        runnerInvoked: true,
-      };
+    try {
+      await this.evidenceSink.putEvidence(evidence);
+    } catch (err) {
+      fail([
+        `evidence persistence failed after lifecycle persist: ${
+          err instanceof Error ? err.message : "unknown evidence sink error"
+        }`,
+        `execution_state=${persistedExecution.state}`,
+        `task_state=${persistedTask.state}`,
+      ]);
     }
 
-    const failed = await this.lifecycle.markExecutionFailed({
-      execution_id: input.execution_id,
-    });
     return {
-      execution: failed.execution,
-      task: failed.task,
+      execution: clone(persistedExecution),
+      task: clone(persistedTask),
       runnerResult,
       validation,
       evidence,

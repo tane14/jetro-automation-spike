@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Governed execution lifecycle v1.4A.
+ * Governed execution lifecycle v1.4.1.
  *
  * Canonical machines only:
  *   execution LEASED → RUNNING → RESULT_SUBMITTED | FAILED
@@ -10,7 +10,15 @@
  * Execution has no REVIEW_READY state. Task REVIEW_READY means a reviewable
  * result, not completion, GitHub approval, or merge.
  *
- * Does not call Cursor Agent. Not completion approval.
+ * Start authority is PreExecutionGateRuntime evaluateStartAuthorization
+ * (allowed === true strict boolean, including lease/TTL). Caller-supplied
+ * { allowed: true } is not authority.
+ *
+ * Review-ready requires independent validateRunnerResult on the observed
+ * runnerResult. Caller-supplied { passed: true } is not authority.
+ *
+ * MULTI_FILE_ATOMICITY=NO. PARTIAL_PERSIST_RECOVERY=NOT_IMPLEMENTED.
+ * FAIL_CLOSED=YES. Does not call Cursor Agent. Not completion approval.
  */
 
 const {
@@ -24,6 +32,7 @@ const { assertStore } = require("./MissionTaskStore");
 const { assertCanonicalId } = require("./ids");
 const { RuntimeValidationError } = require("./MissionTaskRuntime");
 const { buildContractProvenance } = require("./GovernedRunEvidence");
+const { validateRunnerResult } = require("./RunnerResultValidator");
 
 function fail(errors) {
   throw new RuntimeValidationError(errors);
@@ -58,6 +67,10 @@ function executionTransition(task, fromState, toState, reason) {
 }
 
 function taskTransition(task, fromState, toState, reason) {
+  const currentBinding = verifyContractBinding(task);
+  if (!currentBinding.valid) {
+    fail(currentBinding.errors);
+  }
   const allowed = validateTransition("task", fromState, toState);
   if (!allowed.valid) {
     fail(allowed.errors);
@@ -88,10 +101,18 @@ function taskTransition(task, fromState, toState, reason) {
 
 class GovernedExecutionLifecycleRuntime {
   /**
-   * @param {{ store: object, clock?: () => Date }} options
+   * @param {{
+   *   store: object,
+   *   evaluateStartAuthorization: Function,
+   *   clock?: () => Date,
+   * }} options
    */
   constructor(options = {}) {
     this.store = assertStore(options.store);
+    if (typeof options.evaluateStartAuthorization !== "function") {
+      throw new Error("GovernedExecutionLifecycleRuntime requires evaluateStartAuthorization");
+    }
+    this.evaluateStartAuthorization = options.evaluateStartAuthorization;
     this.clock = typeof options.clock === "function" ? options.clock : () => new Date();
   }
 
@@ -104,9 +125,18 @@ class GovernedExecutionLifecycleRuntime {
     }
     assertCanonicalId("EXEC", input.execution_id);
 
-    const startAuth = input.startAuthorization;
+    let startAuth;
+    try {
+      startAuth = await this.evaluateStartAuthorization(input.execution_id);
+    } catch (err) {
+      fail([err instanceof Error ? err.message : "start authorization evaluation failed"]);
+    }
     if (!startAuth || startAuth.allowed !== true) {
-      fail(["start authorization is not allowed"]);
+      fail(
+        startAuth && Array.isArray(startAuth.reasons) && startAuth.reasons.length
+          ? startAuth.reasons
+          : ["pre-execution start authorization is not allowed"],
+      );
     }
 
     const execution = await this.store.getExecution(input.execution_id);
@@ -235,8 +265,14 @@ class GovernedExecutionLifecycleRuntime {
       fail(["markExecutionReviewReady requires execution_id"]);
     }
     assertCanonicalId("EXEC", input.execution_id);
-    if (!input.validation || input.validation.passed !== true) {
-      fail(["independent validation has not passed"]);
+
+    const validation = validateRunnerResult(input.runnerResult, input.validationExpectations || {});
+    if (validation.passed !== true) {
+      fail(
+        validation.findings.length
+          ? validation.findings
+          : ["independent validation has not passed"],
+      );
     }
 
     const execution = await this.store.getExecution(input.execution_id);
@@ -253,6 +289,10 @@ class GovernedExecutionLifecycleRuntime {
     }
     if (task.state !== "IN_PROGRESS") {
       fail([`task state ${task.state} cannot become REVIEW_READY`]);
+    }
+    const binding = verifyContractBinding(task);
+    if (!binding.valid) {
+      fail(binding.errors);
     }
 
     const now = isoNow(this.clock);
@@ -295,6 +335,7 @@ class GovernedExecutionLifecycleRuntime {
     return {
       execution: clone(nextExecution),
       task: clone(taskMove.nextTask),
+      validation,
       taskCompletionAuthorized: false,
     };
   }
@@ -321,6 +362,10 @@ class GovernedExecutionLifecycleRuntime {
     }
     if (task.state !== "IN_PROGRESS") {
       fail([`task state ${task.state} cannot fail-closed from RUNNING`]);
+    }
+    const binding = verifyContractBinding(task);
+    if (!binding.valid) {
+      fail(binding.errors);
     }
 
     const now = isoNow(this.clock);
