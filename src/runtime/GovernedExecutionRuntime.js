@@ -43,6 +43,10 @@ class MemoryEvidenceSink {
   async listEvidenceIds() {
     return this.records.map((item) => item.evidence_id).filter(Boolean);
   }
+
+  async listEvidence() {
+    return this.records.map((item) => clone(item));
+  }
 }
 
 class GovernedExecutionRuntime {
@@ -115,6 +119,24 @@ class GovernedExecutionRuntime {
       execution_id: input.execution_id,
     });
 
+    if (typeof this.store.putRunnerAttempt !== "function") {
+      fail(["runner attempt identity is required before governed runner invocation"]);
+    }
+
+    const attempt = {
+      schema_version: "1.5-governed-runner-attempt",
+      document_kind: "runner_attempt",
+      attempt_id: `ATTEMPT-${input.execution_id}`,
+      execution_id: input.execution_id,
+      task_id: running.task.task_id,
+      contract_id: running.task.contract_id,
+      contract_hash: running.task.contract_hash,
+      invocation_state: "INVOKED",
+      runner_result: null,
+      authority_claim: "none",
+    };
+    await this.store.putRunnerAttempt(input.execution_id, attempt);
+
     let runnerResult;
     try {
       runnerResult = await this.runner.run(input.runnerRequest);
@@ -122,6 +144,11 @@ class GovernedExecutionRuntime {
       await this.lifecycle.markExecutionFailed({ execution_id: input.execution_id });
       fail([err instanceof Error ? err.message : "runner invocation failed"]);
     }
+
+    const returnedAttempt = clone(attempt);
+    returnedAttempt.invocation_state = "RETURNED";
+    returnedAttempt.runner_result = clone(runnerResult);
+    await this.store.putRunnerAttempt(input.execution_id, returnedAttempt);
 
     const expectations = input.validationExpectations || {};
     const validation = validateRunnerResult(runnerResult, expectations);
