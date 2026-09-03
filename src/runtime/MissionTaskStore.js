@@ -130,6 +130,30 @@ class MissionTaskStore {
   async getPreExecutionAck(_executionId) {
     throw new Error("MissionTaskStore.getPreExecutionAck is not implemented");
   }
+
+  async putReviewHandoff(_reviewId, _doc) {
+    throw new Error("MissionTaskStore.putReviewHandoff is not implemented");
+  }
+
+  async getReviewHandoff(_reviewId) {
+    throw new Error("MissionTaskStore.getReviewHandoff is not implemented");
+  }
+
+  async listReviewHandoffs() {
+    throw new Error("MissionTaskStore.listReviewHandoffs is not implemented");
+  }
+
+  async putReviewResult(_reviewId, _doc) {
+    throw new Error("MissionTaskStore.putReviewResult is not implemented");
+  }
+
+  async getReviewResult(_reviewId) {
+    throw new Error("MissionTaskStore.getReviewResult is not implemented");
+  }
+
+  async listReviewResults() {
+    throw new Error("MissionTaskStore.listReviewResults is not implemented");
+  }
 }
 
 function assertStore(store) {

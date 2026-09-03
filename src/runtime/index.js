@@ -3,7 +3,8 @@
 /**
  * Task Dispatch runtime v0.8, Executor Exchange runtime v0.9,
  * Pre-Execution Gate v1.0, ControlledCursorRunner v0.1.1,
- * governed execution lifecycle v1.4.1, and governed execution recovery v1.5.
+ * governed execution lifecycle v1.4.1, governed execution recovery v1.5,
+ * and reviewer automation v1.6.
  * Not an HTTP API, database, GitHub integration, or authority source.
  * ControlledCursorRunner is not a security boundary.
  * WINDOWS_DESCENDANT_TERMINATION_GUARANTEE=NO
@@ -31,6 +32,8 @@ const {
   CLASSIFICATION: RECOVERY_CLASSIFICATION,
 } = require("./GovernedExecutionRecovery");
 const { validateRunnerResult } = require("./RunnerResultValidator");
+const { ReviewerAutomation, CLASSIFICATION: REVIEW_CLASSIFICATION } = require("./ReviewerAutomation");
+const { ReviewerAdapter, FakeReviewerAdapter } = require("./ReviewerAdapter");
 const { utcDateStamp, nextId, assertCanonicalId } = require("./ids");
 
 module.exports = {
@@ -51,6 +54,10 @@ module.exports = {
   MemoryEvidenceSink,
   GovernedExecutionRecovery,
   RECOVERY_CLASSIFICATION,
+  ReviewerAutomation,
+  REVIEW_CLASSIFICATION,
+  ReviewerAdapter,
+  FakeReviewerAdapter,
   validateRunnerResult,
   utcDateStamp,
   nextId,
