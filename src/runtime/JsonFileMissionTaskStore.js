@@ -64,6 +64,8 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     this.inboxDir = path.join(this.rootDir, "exchange", "inbox");
     this.preExecutionAcksDir = path.join(this.rootDir, "pre-execution-acks");
     this.runnerAttemptsDir = path.join(this.rootDir, "runner-attempts");
+    this.reviewHandoffsDir = path.join(this.rootDir, "review-handoffs");
+    this.reviewResultsDir = path.join(this.rootDir, "review-results");
   }
 
   #missionPath(missionId) {
@@ -114,6 +116,21 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
   #runnerAttemptPath(executionId) {
     assertCanonicalId("EXEC", executionId);
     return path.join(this.runnerAttemptsDir, `${executionId}.json`);
+  }
+
+  #assertReviewId(reviewId) {
+    if (typeof reviewId !== "string" || !/^REV-[A-Za-z0-9._-]+$/.test(reviewId)) {
+      throw new Error(`invalid review id: ${JSON.stringify(reviewId)}`);
+    }
+    return reviewId;
+  }
+
+  #reviewHandoffPath(reviewId) {
+    return path.join(this.reviewHandoffsDir, `${this.#assertReviewId(reviewId)}.json`);
+  }
+
+  #reviewResultPath(reviewId) {
+    return path.join(this.reviewResultsDir, `${this.#assertReviewId(reviewId)}.json`);
   }
 
   #transitionFile(executionId, suffix) {
@@ -347,6 +364,38 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
 
   async getPreExecutionAck(executionId) {
     return readJsonIfPresent(this.#preExecutionAckPath(executionId));
+  }
+
+  async putReviewHandoff(reviewId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putReviewHandoff requires a review handoff document");
+    }
+    writeJsonAtomic(this.#reviewHandoffPath(reviewId), doc);
+    return doc;
+  }
+
+  async getReviewHandoff(reviewId) {
+    return readJsonIfPresent(this.#reviewHandoffPath(reviewId));
+  }
+
+  async listReviewHandoffs() {
+    return this.#listJsonDocs(this.reviewHandoffsDir);
+  }
+
+  async putReviewResult(reviewId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putReviewResult requires a review result document");
+    }
+    writeJsonAtomic(this.#reviewResultPath(reviewId), doc);
+    return doc;
+  }
+
+  async getReviewResult(reviewId) {
+    return readJsonIfPresent(this.#reviewResultPath(reviewId));
+  }
+
+  async listReviewResults() {
+    return this.#listJsonDocs(this.reviewResultsDir);
   }
 }
 
