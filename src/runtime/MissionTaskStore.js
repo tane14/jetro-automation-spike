@@ -67,6 +67,22 @@ class MissionTaskStore {
     throw new Error("MissionTaskStore.putTransition is not implemented");
   }
 
+  async getTransition(_executionId, _suffix) {
+    throw new Error("MissionTaskStore.getTransition is not implemented");
+  }
+
+  async listTransitions(_executionId) {
+    throw new Error("MissionTaskStore.listTransitions is not implemented");
+  }
+
+  async putRunnerAttempt(_executionId, _doc) {
+    throw new Error("MissionTaskStore.putRunnerAttempt is not implemented");
+  }
+
+  async getRunnerAttempt(_executionId) {
+    throw new Error("MissionTaskStore.getRunnerAttempt is not implemented");
+  }
+
   async putPackage(_executionId, _doc) {
     throw new Error("MissionTaskStore.putPackage is not implemented");
   }

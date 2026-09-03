@@ -63,6 +63,7 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     this.outboxDir = path.join(this.rootDir, "exchange", "outbox");
     this.inboxDir = path.join(this.rootDir, "exchange", "inbox");
     this.preExecutionAcksDir = path.join(this.rootDir, "pre-execution-acks");
+    this.runnerAttemptsDir = path.join(this.rootDir, "runner-attempts");
   }
 
   #missionPath(missionId) {
@@ -108,6 +109,11 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
   #preExecutionAckPath(executionId) {
     assertCanonicalId("EXEC", executionId);
     return path.join(this.preExecutionAcksDir, `${executionId}.json`);
+  }
+
+  #runnerAttemptPath(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    return path.join(this.runnerAttemptsDir, `${executionId}.json`);
   }
 
   #transitionFile(executionId, suffix) {
@@ -230,6 +236,42 @@ class JsonFileMissionTaskStore extends MissionTaskStore {
     }
     writeJsonAtomic(this.#transitionFile(executionId, suffix), doc);
     return doc;
+  }
+
+  async getTransition(executionId, suffix) {
+    return readJsonIfPresent(this.#transitionFile(executionId, suffix));
+  }
+
+  async listTransitions(executionId) {
+    assertCanonicalId("EXEC", executionId);
+    if (!fs.existsSync(this.transitionsDir)) {
+      return [];
+    }
+    const prefix = `${executionId}.`;
+    const exact = `${executionId}.json`;
+    const names = fs.readdirSync(this.transitionsDir).filter((name) => {
+      return name === exact || (name.startsWith(prefix) && name.endsWith(".json"));
+    });
+    const docs = [];
+    for (const name of names.sort()) {
+      const doc = readJsonIfPresent(path.join(this.transitionsDir, name));
+      if (doc) {
+        docs.push({ suffix: name === exact ? "" : name.slice(prefix.length, -5), transition: doc });
+      }
+    }
+    return docs;
+  }
+
+  async putRunnerAttempt(executionId, doc) {
+    if (!doc || typeof doc !== "object") {
+      throw new Error("putRunnerAttempt requires a runner attempt document");
+    }
+    writeJsonAtomic(this.#runnerAttemptPath(executionId), doc);
+    return doc;
+  }
+
+  async getRunnerAttempt(executionId) {
+    return readJsonIfPresent(this.#runnerAttemptPath(executionId));
   }
 
   async putPackage(executionId, doc) {
